@@ -1,0 +1,31 @@
+{
+  "lastUpdated": "2026-04-17T00:00:00Z",
+  "sprint": "Sprint 1",
+  "progress": 0,
+  "tasks": {
+    "total": 1,
+    "done": 0,
+    "inProgress": 0,
+    "inReview": 0,
+    "inQa": 0,
+    "todo": 1,
+    "blocked": 0
+  },
+  "bugs": {
+    "total": 0,
+    "open": 0,
+    "inProgress": 0,
+    "verified": 0,
+    "closed": 0
+  },
+  "tests": {
+    "total": 0,
+    "automated": 0,
+    "passed": 0,
+    "failed": 0,
+    "notRun": 0
+  },
+  "velocity": {
+    "sprint1": { "planned": 0, "completed": 0, "tasks": 0 }
+  }
+}
