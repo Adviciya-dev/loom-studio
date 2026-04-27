@@ -1,0 +1,88 @@
+.list {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.headerLabel {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background-color: var(--bg-elevated);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.items {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: var(--space-xs) 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  margin: 0 var(--space-xs);
+  transition: background-color 0.1s;
+}
+
+.item:hover {
+  background-color: var(--bg-hover);
+}
+
+.item.selected {
+  background-color: var(--accent-subtle);
+}
+
+.filename {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.badges {
+  display: flex;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.added {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--success);
+}
+
+.removed {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--error);
+}

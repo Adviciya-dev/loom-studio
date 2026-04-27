@@ -1,0 +1,306 @@
+.wrapper {
+  position: relative;
+}
+
+/* ── Trigger button ─────────────────────────────────────── */
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.trigger:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.branchIcon {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.branchName {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ahead {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--success);
+}
+
+.behind {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--warn);
+}
+
+/* ── Dropdown panel ─────────────────────────────────────── */
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 240px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--border);
+}
+
+/* ── Remote section ─────────────────────────────────────── */
+
+.remoteSection {
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.remoteUrl {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remoteActions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.remoteBtn {
+  flex: 1;
+  padding: var(--space-xs) 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.remoteBtn:hover:not(:disabled) {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.remoteBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.remoteBtn.active {
+  background-color: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.remoteStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.noRemote {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sshSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--space-xs);
+}
+
+.sshLabel {
+  font-size: var(--font-size-xs);
+  color: var(--warn);
+  font-weight: 500;
+}
+
+/* ── Branch list ────────────────────────────────────────── */
+
+.branchList {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: var(--space-xs) 0;
+}
+
+.branchItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  transition: background-color 0.1s;
+}
+
+.branchItem:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.activeBranch {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.check {
+  width: 12px;
+  font-size: 11px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ── New branch ─────────────────────────────────────────── */
+
+.newBranchBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-align: left;
+  transition:
+    background-color 0.1s,
+    color 0.1s;
+}
+
+.newBranchBtn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.newBranchSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.rowActions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* ── Commit section ─────────────────────────────────────── */
+
+.commitSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+}
+
+/* ── Shared input ───────────────────────────────────────── */
+
+.input {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+/* ── Shared buttons ─────────────────────────────────────── */
+
+.primaryBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--accent);
+  border-radius: var(--radius-md);
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: var(--bg-hover);
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+
+.cancelBtn:hover {
+  background-color: var(--border);
+}

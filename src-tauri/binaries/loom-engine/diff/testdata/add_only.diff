@@ -1,0 +1,10 @@
+diff --git a/hello.go b/hello.go
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/hello.go
+@@ -0,0 +1,4 @@
++package main
++
++func main() {}
++

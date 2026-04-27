@@ -1,0 +1,111 @@
+.footer {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background-color: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.inputRow {
+  padding: var(--space-sm) var(--space-md) 0;
+}
+
+.feedbackInput {
+  width: 100%;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  padding: var(--space-xs) var(--space-sm);
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.feedbackInput::placeholder {
+  color: var(--text-muted);
+}
+
+.feedbackInput:focus {
+  border-color: var(--accent);
+  background-color: var(--bg-hover);
+}
+
+.feedbackInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bottomRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.filename {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.rejectBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.rejectBtn:hover:not(:disabled) {
+  background-color: rgba(255, 69, 58, 0.12);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.applyBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--accent);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.applyBtn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.rejectBtn:disabled,
+.applyBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

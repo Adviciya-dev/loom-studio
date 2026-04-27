@@ -1,4 +1,4 @@
-# Claude Code Rules — Loom Studio
+# Claude Code Rules — Loom
 
 > **Read this file FIRST before touching any code.**
 > This is the single source of truth for project rules, coding standards, and development workflow.
@@ -9,14 +9,14 @@
 
 | Field | Value |
 |-------|-------|
-| **Project** | Loom Studio |
-| **Client** | Adviciya |
-| **Type** | Desktop App (Electron) |
+| **Project** | Loom |
+| **Type** | Native Developer Workflow Tool |
+| **Platform** | Desktop (Tauri + Go CLI) |
 | **Industry** | Developer Tools |
-| **Repo** | Adviciya-dev/loom-studio |
+| **Repo** | — |
 | **Pod** | — |
-| **Sprint Duration** | 2 weeks |
-| **Current Sprint** | Sprint 1 |
+| **Sprint Duration** | — |
+| **Current Sprint** | — |
 
 ---
 
@@ -30,34 +30,24 @@
 
 ## Tech Stack Rules
 
-### Frontend
-- **React 18** with TypeScript — no JavaScript files
-- **Vite** for build — no CRA, no Webpack
-- **Tailwind CSS** — no CSS modules, no styled-components, no inline styles in production
-- **React Query (TanStack Query v5)** — for ALL server state. No useState for API data
-- **Zustand** — for client-only UI state (sidebar, modals, filters)
-- **React Hook Form + Zod** — for ALL forms (task editor, bug editor, create project wizard)
-- **Axios** — with centralized interceptor at `shared/services/api.ts`
-- **Lucide React** — for icons. No other icon library
-- **Headless UI** — for dropdowns, modals, transitions
+### Desktop Shell
+- **Tauri (Rust)** — Native window, OS integration, IPC bridge
+- **React 18** with TypeScript — UI rendering, state management
+- **Vite** — Frontend bundling
+- **CSS Modules** — Scoped component styles
 
-### Backend
-- **NestJS 10** with TypeScript — strict mode enabled
-- **TypeORM 0.3** — with migrations, never `synchronize: true` in production
-- **PostgreSQL 16** — all queries through TypeORM QueryBuilder or Repository pattern
-- **Redis 7** — via `@nestjs/cache-manager` for JWT store, sync locks, parsed cache
-- **simple-git** — for all Git operations (clone, pull, add, commit, push)
-- **@octokit/rest** — for GitHub API (create repo, list repos, check harness folder)
-- **Bull** — for background jobs (auto-commit, webhook processing)
-- **class-validator + class-transformer** — for ALL DTOs
-- **Passport JWT** — for authentication
-- **Winston** — for structured logging (JSON format)
-- **Swagger** — auto-generated from decorators
+### Core Engine
+- **Go CLI** 1.22+ — Process orchestration, diff parsing
+- **Claude Code CLI** — AI code generation and modification
 
-### Shared
-- **Node.js 20 LTS** — minimum version
-- **pnpm** — package manager (not npm, not yarn)
-- **ESLint + Prettier** — pre-commit hook via husky + lint-staged
+### Infrastructure
+- **Git** 2.x — Local version control, diff extraction
+- **Local JSON Store** — Projects, task state, preferences
+
+### Development Tools
+- **Node.js 20 LTS** — Minimum version
+- **pnpm** — Package manager (not npm, not yarn)
+- **ESLint + Prettier** — Pre-commit hook via husky + lint-staged
 - **Conventional Commits** — `feat:`, `fix:`, `chore:`, `docs:`
 
 ---
@@ -105,44 +95,30 @@ import type { TaskData } from '@/shared/types';
 
 ## Architecture Rules
 
-### Frontend Rules
-1. Every page gets its own folder under `src/pages/`
-2. Shared components go in `src/shared/components/` — ONLY if used by 2+ pages
-3. API calls ONLY happen in `src/shared/hooks/` via React Query — never in components
-4. Forms always use React Hook Form — never raw `useState` for form fields
-5. No prop drilling beyond 2 levels — use Zustand store or React Context
-6. Task/Bug detail editors open as full-screen modals — not separate routes
-7. Markdown preview uses the SAME `taskToMarkdown()` / `bugToMarkdown()` as backend
+### Tauri Shell (Rust) Rules
+1. IPC commands exposed to frontend: `open_folder_picker()`, `read_harness_tasks()`, `get_projects()`, `save_project()`, `invoke_engine()`
+2. Window management: Single-window application, frameless with custom titlebar
+3. File system access: Folder picker dialog, reading `harness/` directory contents
+4. Process spawning: Launches the Go CLI engine as a sidecar
 
-### Backend Rules
-1. Controller → Service → Repository/Parser — never skip layers
-2. DTOs for ALL request bodies — validated with `class-validator`
-3. No raw SQL — use TypeORM QueryBuilder
-4. Harness files are source of truth — NEVER store task/bug data in PostgreSQL
-5. Git operations always acquire Redis lock first — prevent concurrent modifications
-6. Markdown writer uses Handlebars templates — never string concatenation
-7. Every mutation logs to audit table — interceptor handles automatically
+### React Frontend (TypeScript) Rules
+1. Single-page React application rendered inside Tauri webview
+2. No direct filesystem or process access — all operations through Tauri IPC
+3. Component tree: `<App>` → `<Sidebar>`, `<TopBar>`, `<Workspace>`, `<BottomBar>`, modals
+4. State management: React Context + useReducer, no external state library in MVP
+5. Every page gets its own folder under `src/pages/`
+6. Shared components go in `src/shared/components/` — ONLY if used by 2+ pages
 
-### Critical Rule: Markdown Fidelity
-The generated `.md` files MUST be identical whether created from the dashboard or hand-written in VS Code. Claude Code must NOT be able to tell the difference. The roundtrip `parse(write(data))` must be lossless.
+### Go CLI Core Engine Rules
+1. Manages Claude Code CLI as child process
+2. Streams stdout/stderr line by line to frontend
+3. Detects Claude confirmation prompts and extracts diffs
+4. Holds process at confirmation until user decides
+5. Executes git commit after approved changes
+6. Emits structured events back to Tauri frontend
 
----
-
-## API Standards
-
-### Response Format
-```json
-{ "success": true, "data": { }, "message": "Task updated", "meta": { "timestamp": "..." } }
-```
-
-### Error Format
-```json
-{ "success": false, "error": { "code": "TASK_NOT_FOUND", "message": "...", "details": { } } }
-```
-
-### Status Codes
-- 200 Success | 201 Created | 204 Deleted | 400 Validation | 401 Unauthorized
-- 403 Forbidden | 404 Not Found | 409 Conflict | 423 Locked | 500 Server Error
+### Critical Rule: Diff Interception
+The diff view is **not** a post-execution review. When Claude Code CLI prompts for confirmation, Loom intercepts that moment and surfaces a structured diff panel. The user reviews proposed changes and decides — Claude continues or reverts based on the decision. This is a true pre-apply review model.
 
 ---
 
@@ -166,24 +142,24 @@ ALWAYS READ:
 3. harness/architecture.md    ← System design & module structure
 
 READ WHEN RELEVANT:
-4. harness/tech-stack.md      ← Dependencies & versions
-5. harness/docs/db-schema.md  ← When doing database work
-6. harness/docs/api-contracts.md ← When doing API work
-7. harness/docs/env-setup.md  ← When setting up dev environment
-8. harness/prd.md             ← When clarifying requirements
+4. harness/prd.md             ← Product requirements & goals
+5. harness/tech-stack.md      ← Dependencies & versions (if exists)
+6. harness/docs/db-schema.md  ← When doing database work (if exists)
+7. harness/docs/api-contracts.md ← When doing API work (if exists)
+8. harness/docs/env-setup.md  ← When setting up dev environment (if exists)
 ```
 
 ---
 
 ## What Not To Do
 
-- Don't store task/bug data in PostgreSQL — files are source of truth
-- Don't use `synchronize: true` — use TypeORM migrations
+- Don't make API calls in components — all operations through Tauri IPC
+- Don't access filesystem directly from frontend — use Tauri commands
+- Don't store persistent state in React — use local JSON store via Tauri
 - Don't commit `.env` files — use `.env.example`
 - Don't use `any` type — use `unknown` with type guards
-- Don't use CSS-in-JS — use Tailwind utility classes
-- Don't use `console.log` — use Winston logger (backend)
-- Don't make API calls in components — use React Query hooks
-- Don't string-concatenate markdown — use Handlebars templates
-- Don't skip the Redis lock before Git operations
-- Don't modify files outside `/harness` in project repos
+- Don't use CSS-in-JS — use CSS Modules
+- Don't use `console.log` — use structured logging in Go engine
+- Don't modify files outside the project repos
+- Don't spawn processes directly from frontend — use Go engine
+- Don't bypass the diff interception — all changes must be approved

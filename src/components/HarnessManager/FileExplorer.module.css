@@ -1,0 +1,121 @@
+.explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.refreshBtn {
+  font-size: 14px;
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.refreshBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-xs) 0;
+}
+
+.status {
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+/* ── Tree rows ─────────────────────────────────── */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  padding-right: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background 0.08s,
+    color 0.08s;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.folderIcon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.fileIcon {
+  font-size: 11px;
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--warn);
+  background: rgba(255, 159, 10, 0.15);
+  border-radius: 8px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}

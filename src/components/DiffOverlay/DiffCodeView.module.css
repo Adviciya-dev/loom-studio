@@ -1,0 +1,128 @@
+.codeView {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fileHeader {
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.filePath {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.virtBadge {
+  font-size: 10px;
+  color: var(--text-muted);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  margin-left: var(--space-sm);
+}
+
+.scroll {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.empty {
+  padding: var(--space-lg);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ─── Table layout ─────────────────────────────────────── */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  table-layout: fixed;
+}
+
+.row {
+  vertical-align: top;
+}
+
+.lineNum {
+  width: 48px;
+  min-width: 48px;
+  text-align: right;
+  padding: 0 var(--space-sm);
+  color: var(--text-muted);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gutter {
+  width: 20px;
+  min-width: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.code {
+  padding: 0 var(--space-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ─── Line type styles ─────────────────────────────────── */
+
+.row.add,
+.add .lineNum,
+.add .gutter,
+tr .add.code,
+tr .add.lineNum {
+  background-color: rgba(52, 199, 89, 0.1);
+}
+
+.row.add .code {
+  border-left: 3px solid var(--success);
+}
+
+.row.rem,
+.rem .lineNum,
+.rem .gutter,
+tr .rem.code,
+tr .rem.lineNum {
+  background-color: rgba(255, 69, 58, 0.1);
+}
+
+.row.rem .code {
+  border-left: 3px solid var(--error);
+  text-decoration: line-through;
+  text-decoration-color: var(--error);
+}
+
+.row.neutral .code {
+  border-left: 3px solid transparent;
+}
+
+/* ─── Split view ───────────────────────────────────────── */
+
+.splitTable .code {
+  width: 45%;
+}
+
+.splitDivider {
+  width: 1px;
+  background-color: var(--border);
+  padding: 0;
+}
+
+.empty {
+  background-color: var(--bg-base);
+}
