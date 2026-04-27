@@ -53,6 +53,45 @@ function ts() {
   return new Date().toLocaleTimeString('en', { hour12: false })
 }
 
+function ThinkingBubble({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Show last meaningful line as a live status hint.
+  const lines = content.split('\n').filter((l) => l.trim())
+  const last = lines[lines.length - 1] ?? 'Working…'
+  const status = last.length > 72 ? last.slice(0, 72) + '…' : last
+
+  return (
+    <div className={styles.thinkingMsg}>
+      <div className={styles.thinkingBubble}>
+        <div className={styles.thinkingHeader}>
+          <div className={styles.thinkingLeft}>
+            <span className={styles.thinkingDots}>
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className={styles.thinkingStatus}>{status}</span>
+          </div>
+          <button
+            className={styles.expandBtn}
+            onClick={() => setExpanded((e) => !e)}
+            title={expanded ? 'Collapse' : 'Show details'}
+          >
+            {expanded ? '▲' : '▼'}
+          </button>
+        </div>
+        {expanded && (
+          <div className={styles.thinkingContent}>
+            {content}
+            <span className={styles.cursor} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AssistantBubble({
   content,
   timestamp,
@@ -349,9 +388,7 @@ function ChatPanel({
               />
             )
           )}
-          {streamingContent !== null && (
-            <AssistantBubble content={streamingContent} timestamp={ts()} streaming />
-          )}
+          {streamingContent !== null && <ThinkingBubble content={streamingContent} />}
         </div>
 
         <div className={styles.quickActions}>
