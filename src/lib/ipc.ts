@@ -27,8 +27,8 @@ export type EngineCommand =
   | { action: 'save_preferences'; preferences: Preferences }
   | { action: 'get_tasks'; path: string }
   | { action: 'start'; task_id: string; task_title: string; prompt: string; project_path: string }
-  | { action: 'approve' }
-  | { action: 'reject' }
+  | { action: 'approve'; feedback?: string }
+  | { action: 'reject'; feedback?: string }
   | { action: 'pause' }
   | { action: 'resume' }
   | { action: 'kill' }
