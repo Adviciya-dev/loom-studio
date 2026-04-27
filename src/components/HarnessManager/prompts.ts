@@ -27,56 +27,147 @@ The document should include:
 Write the complete file content and create it using the write tool.`
 
 export const FEATURE_PROMPT = (projectName: string) =>
-  `You are setting up feature briefs for the project "${projectName}".
+  `You are creating detailed, developer-ready feature briefs for "${projectName}".
 
 Follow these steps in order:
 
 1. **Create the features folder** — run \`mkdir -p harness/features\` if it doesn't exist.
 
-2. **Read context** — read \`harness/prd.md\` and \`harness/architecture.md\` to understand the product and technical design. If either is missing, note it and proceed with what's available.
+2. **Read context** — read \`harness/prd.md\` and \`harness/architecture.md\`. If either is missing, proceed with what's available.
 
-3. **Identify all features/modules** — extract every distinct feature or module from the documents (e.g. Authentication, Home Screen, Dashboard, Profile, Notifications, etc.). Each top-level user-facing module or major backend service should be its own feature.
+3. **Identify all modules** — extract every distinct feature or module. Each top-level user-facing module or major backend service becomes its own file.
 
-4. **Create one file per feature** — for each identified feature, create \`harness/features/<feature-name>.md\` (use kebab-case, e.g. \`authentication.md\`, \`home-screen.md\`). Each file must follow this exact structure:
+4. **Create one file per module** at \`harness/features/<feature-name>.md\` (kebab-case). Each file must be LOW-LEVEL and developer-actionable — detailed enough that a developer can immediately start writing tasks without asking questions.
 
-\`\`\`
+Each file must follow this exact structure:
+
+\`\`\`markdown
 # Feature: <Feature Name>
 
 ## Overview
-One paragraph description of what this feature does and why it exists.
+One paragraph: what this module does, who uses it, and why it exists.
 
-## Problem it solves
-What user pain or business need does this address?
-
-## User stories
-- As a [user type], I want [goal], so that [benefit].
+## User Stories
 - As a [user type], I want [goal], so that [benefit].
 
-## Acceptance criteria
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Criterion 3
+## Screens / Pages
+For each screen in this module:
 
-## Technical approach
-How will this be built? Key components, APIs, data models.
+### <Screen Name> (\`/route/path\`)
+**Purpose:** One sentence — what this screen does.
+**Components:**
+- \`ComponentName\` — what it renders, key props, behaviour on interaction
+**Fields / Inputs:**
+- \`fieldName\` (string | number | boolean) — validation rules, placeholder, required/optional
+**Actions:**
+- Button label → exact outcome (API call + endpoint, navigation path, state update)
+**States:**
+- loading — skeleton or spinner shown where?
+- empty — what text/illustration shown?
+- error — inline or toast? exact error message?
+- success — what changes in the UI?
+**Edge cases:**
+- What happens if the user has no data yet?
+- What happens if an action fails mid-way?
 
-## Dependencies
-- Other features or services this depends on
-- Third-party libraries or APIs required
+## API Contracts
+List every endpoint this feature calls or exposes.
 
-## Risks
-- Risk 1 and mitigation
-- Risk 2 and mitigation
+### METHOD /api/v1/<resource>
+- **Auth:** Bearer JWT required / public
+- **Query params:** \`param\` (type) — what it filters/sorts
+- **Request body:**
+\`\`\`json
+{
+  "field": "string — max 255 chars, required",
+  "amount": "number — positive integer, required"
+}
+\`\`\`
+- **Response 200/201:**
+\`\`\`json
+{
+  "id": "uuid",
+  "field": "string"
+}
+\`\`\`
+- **Error responses:**
+  - 400 — validation failed, returns \`{ errors: [...] }\`
+  - 401 — missing or invalid token
+  - 404 — resource not found
+  - 409 — conflict (e.g. duplicate entry)
 
-## Timeline estimate
-| Phase | Description | Estimate |
-|-------|-------------|----------|
-| Design | ... | X days |
-| Implementation | ... | X days |
-| Testing | ... | X days |
+## Data Models
+For each DB table or document this feature owns or modifies:
+
+\`\`\`
+Table: table_name
+- id: uuid, PK, auto-generated
+- field_name: varchar(255), NOT NULL — description
+- status: enum('active','inactive'), default 'active'
+- user_id: uuid, FK → users.id, ON DELETE CASCADE
+- created_at: timestamp, auto
+- updated_at: timestamp, auto
+\`\`\`
+Relationships: describe every FK join and what cascades.
+
+## Business Logic Rules
+Exact rules a developer must implement — no vague language:
+- Rule: "If [condition], then [exact action/response]"
+- Validation: "Field X must be [constraint] — return error code Y if violated"
+- Permissions: "Only [role] can [action] — return 403 otherwise"
+- Triggers: "When [event], automatically [side effect]"
+
+## State Management
+- Global atoms/store slices this feature reads or writes
+- Local component state that must persist across re-renders
+- Cache keys and when to invalidate them
+- Optimistic update strategy (if any)
+
+## Files to Create / Modify
+\`\`\`
+CREATE:
+- apps/<app>/src/pages/<feature>/index.tsx
+- apps/<app>/src/pages/<feature>/<Screen>.tsx
+- apps/<app>/src/components/<Feature>/<Component>.tsx
+- apps/<app>/src/hooks/use<Feature>.ts
+- apps/api/src/routes/<feature>.ts
+- apps/api/src/services/<Feature>Service.ts
+- apps/api/src/models/<Feature>.ts
+- packages/schemas/src/<feature>.ts     (Zod schemas shared FE + BE)
+- packages/types/src/<feature>.ts       (TypeScript interfaces)
+
+MODIFY:
+- apps/<app>/src/app/_layout.tsx        (add route)
+- apps/api/src/routes/index.ts          (register router)
+- packages/schemas/src/index.ts         (export new schemas)
 \`\`\`
 
-Create all feature files now. Do not ask for confirmation — generate all files in one pass based on what you find in prd.md and architecture.md.`
+## Acceptance Criteria
+Each criterion must be specific and independently testable:
+- [ ] <Screen> renders <exact element> when <exact condition>
+- [ ] POST /api/v1/<resource> returns 201 with correct shape when all required fields provided
+- [ ] Form submit is disabled until all required fields are valid
+- [ ] Error toast appears within 300ms of a failed API call
+- [ ] Loading skeleton shown for exactly the duration of the API call
+- [ ] Empty state illustration shown when list returns 0 items
+
+## Edge Cases & Error Handling
+- **Empty state:** what renders when there is no data (text, illustration, CTA)
+- **Network error:** exact UI response on 500 or timeout
+- **Validation errors:** inline field errors vs. form-level errors
+- **Concurrent edits:** how conflicts are detected and resolved
+- **Large datasets:** pagination threshold, virtual scroll if needed
+- **Permission denied:** redirect path or inline error message
+- **Expired session:** redirect to login, preserve intended destination
+
+## Dependencies
+- **Requires first:** list other features/modules that must exist before this can be built
+- **Blocks:** list features that cannot start until this is done
+- **Third-party:** libraries, SDKs, or external APIs (include version if critical)
+\`\`\`
+
+Create all feature files now in a single pass. Do not ask for confirmation.
+Be concrete and specific throughout — a developer reading a file must have zero ambiguity about what to build. Avoid vague phrases like "handle errors appropriately" or "show a loading state". Always specify exact behaviour.`
 
 export const TEST_CASE_PROMPT = (projectName: string) =>
   `You are generating a detailed, executable test case document for "${projectName}" based on the attached QA task file.
@@ -340,4 +431,4 @@ CREATE/MODIFY:
 
 ---
 
-Generate all 7 files now in a single pass. Do not ask for confirmation. Base the content entirely on the attached feature file and architecture.md.`
+Generate all selected files now in a single pass. Do not ask for confirmation. Base the content entirely on the attached feature file and architecture.md.`
