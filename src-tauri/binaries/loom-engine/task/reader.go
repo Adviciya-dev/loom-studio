@@ -76,7 +76,7 @@ func ReadAll(harnessPath string) ([]Task, error) {
 //	## Meta  (markdown table with Status, Due Date, etc.)
 //	## Description
 //	## Sub Tasks  (- [ ] / - [x] items)
-//	## Claude Code Context  (used as Prompt)
+//	## Claude Code Context  (used as Prompt; falls back to full content if absent)
 func parseTask(content, filename string) (Task, error) {
 	lines := strings.Split(content, "\n")
 	t := Task{Filename: filename, Steps: make([]Step, 0)}
@@ -173,6 +173,12 @@ func parseTask(content, filename string) (Task, error) {
 
 	if t.Status == "" {
 		t.Status = StatusPending
+	}
+
+	// If no explicit "## Claude Code Context" section, use the full file as the prompt
+	// so Claude receives complete context regardless of task format.
+	if t.Prompt == "" {
+		t.Prompt = strings.TrimSpace(content)
 	}
 
 	return t, nil

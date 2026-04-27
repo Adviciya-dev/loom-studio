@@ -135,8 +135,8 @@ func main() {
 
 		case "start":
 			var prompt, projectPath, taskID, taskTitle string
-			if err := json.Unmarshal(cmd["prompt"], &prompt); err != nil {
-				emitter.EmitEngineError("start: missing prompt")
+			if err := json.Unmarshal(cmd["prompt"], &prompt); err != nil || prompt == "" {
+				emitter.EmitEngineError("start: prompt is empty — add a '## Claude Code Context' section or ensure the task file has content")
 				continue
 			}
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil {
