@@ -175,9 +175,10 @@ func parseTask(content, filename string) (Task, error) {
 		t.Status = StatusPending
 	}
 
-	// If no explicit "## Claude Code Context" section, use the full file as the prompt
-	// so Claude receives complete context regardless of task format.
-	if t.Prompt == "" {
+	// Use full file content as prompt if the explicit section is absent or trivially
+	// short (e.g. just "---" separators with no real instructions).
+	stripped := strings.TrimSpace(strings.Trim(t.Prompt, "-\n\r "))
+	if stripped == "" {
 		t.Prompt = strings.TrimSpace(content)
 	}
 
