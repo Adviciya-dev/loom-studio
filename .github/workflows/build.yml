@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  workflow_dispatch:        # trigger manually from GitHub UI
+  push:
+    tags:
+      - 'v*'               # trigger on version tags like v0.1.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            sidecar: loom-engine-aarch64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar: loom-engine-x86_64-pc-windows-msvc.exe
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Node + pnpm ──────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: latest
+
+      # ── Rust ─────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ── Go ───────────────────────────────────────
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: src-tauri/binaries/loom-engine/go.sum
+
+      # ── Build Go sidecar ─────────────────────────
+      - name: Build Go sidecar
+        working-directory: src-tauri/binaries/loom-engine
+        shell: bash
+        run: |
+          go build -o ../../binaries/${{ matrix.sidecar }} .
+
+      # ── Frontend deps ─────────────────────────────
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      # ── Build Tauri app ───────────────────────────
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Loom ${{ github.ref_name }}'
+          releaseBody: 'See the release notes for details.'
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}

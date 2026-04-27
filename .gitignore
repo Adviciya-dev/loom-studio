@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.local
+src-tauri/target
+src-tauri/binaries/*.exe
+src-tauri/binaries/loom-engine-*
+!src-tauri/binaries/.gitkeep

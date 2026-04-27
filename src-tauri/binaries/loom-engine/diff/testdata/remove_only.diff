@@ -1,0 +1,10 @@
+diff --git a/hello.go b/hello.go
+deleted file mode 100644
+index abc1234..0000000
+--- a/hello.go
++++ /dev/null
+@@ -1,4 +0,0 @@
+-package main
+-
+-func main() {}
+-

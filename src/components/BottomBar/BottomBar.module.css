@@ -1,0 +1,127 @@
+.bottomBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  height: var(--bottombar-height);
+  padding: 0 var(--space-md);
+  background-color: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.attachBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.attachBtn:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.attachBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.promptInput {
+  flex: 1;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  outline: none;
+  min-width: 0;
+}
+
+.promptInput::placeholder {
+  color: var(--text-muted);
+}
+
+.promptInput:focus {
+  border-color: var(--accent);
+}
+
+.sendBtn {
+  padding: 0 var(--space-md);
+  height: 28px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+
+.sendBtn:not(:disabled):hover {
+  background-color: var(--bg-hover);
+}
+
+.sendBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.statusPills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.pill {
+  padding: 2px var(--space-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.pillRunning {
+  color: var(--success);
+  border-color: rgba(16, 185, 129, 0.4);
+  background-color: rgba(16, 185, 129, 0.08);
+}
+
+.pillPaused {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+  background-color: rgba(245, 158, 11, 0.08);
+}
+
+.pillAwaiting {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.4);
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+.pillCompleted {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+  background-color: rgba(16, 185, 129, 0.08);
+}
+
+.pillError {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+  background-color: rgba(239, 68, 68, 0.08);
+}

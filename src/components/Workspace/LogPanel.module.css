@@ -1,0 +1,319 @@
+.logPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background-color: #0a0a0c;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background-color: var(--bg-surface);
+}
+
+.title {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--success);
+  flex-shrink: 0;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.lineCount {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.clearBtn {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.clearBtn:hover {
+  color: var(--text-secondary);
+}
+
+.scrollBtn {
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: background 0.15s;
+}
+
+.scrollBtn:hover {
+  background: rgba(124, 108, 252, 0.25);
+}
+
+/* ── Body ─────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-sm) 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.body::-webkit-scrollbar {
+  width: 6px;
+}
+.body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* ── Empty state ──────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.emptyPrompt {
+  color: var(--success);
+  font-weight: 700;
+}
+
+/* ── Log lines ────────────────────────────────────────────────── */
+
+.line {
+  display: flex;
+  gap: 10px;
+  padding: 2px var(--space-md);
+  min-height: 24px;
+  align-items: flex-start;
+  transition: background-color 0.08s;
+}
+
+.line:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.ts {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 10px;
+  padding-top: 2px;
+  user-select: none;
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+}
+
+.text {
+  flex: 1;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ── Line kinds ───────────────────────────────────────────────── */
+
+.kindText .text {
+  color: #c8c8d4;
+}
+.kindSuccess .text {
+  color: var(--success);
+}
+.kindError .text {
+  color: var(--error);
+}
+.kindWarn .text {
+  color: var(--warn);
+}
+
+.kindTool {
+  background-color: rgba(124, 108, 252, 0.04);
+  border-left: 2px solid rgba(124, 108, 252, 0.3);
+}
+
+.kindTool:hover {
+  background-color: rgba(124, 108, 252, 0.08);
+}
+
+.kindTool.dimmed {
+  border-left-color: rgba(124, 108, 252, 0.1);
+  background-color: transparent;
+  opacity: 0.5;
+}
+
+/* ── Claude chat bubble ───────────────────────────────────────── */
+
+.bubble {
+  margin: 3px var(--space-md) 3px calc(var(--space-md) + 2px);
+  padding: 6px 10px;
+  background-color: rgba(124, 108, 252, 0.06);
+  border-left: 2px solid rgba(124, 108, 252, 0.5);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.bubbleText {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: #d8d8e8;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubbleTs {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.45;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ── Tool line internals ──────────────────────────────────────── */
+
+.toolLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.toolIcon {
+  font-size: 11px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.toolBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background-color: rgba(124, 108, 252, 0.15);
+  border: 1px solid rgba(124, 108, 252, 0.25);
+  border-radius: 3px;
+  padding: 0px 5px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.toolArg {
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
+/* ── Thinking indicator ───────────────────────────────────────── */
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px var(--space-md);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.spinnerChar {
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.thinkingText {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.thinkingDots span {
+  animation: dotFade 1.4s ease-in-out infinite;
+  color: var(--text-muted);
+}
+
+.thinkingDots span:nth-child(1) {
+  animation-delay: 0s;
+}
+.thinkingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.thinkingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes dotFade {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.thinkingCursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  background-color: var(--accent);
+  opacity: 0.7;
+  animation: blink 1.1s step-start infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0;
+  }
+}

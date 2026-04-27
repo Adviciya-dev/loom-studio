@@ -1,0 +1,64 @@
+.runBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--accent);
+  border-radius: var(--radius-md);
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
+}
+
+.runBtn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.runBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pauseBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+
+.pauseBtn:hover {
+  background-color: var(--bg-hover);
+}
+
+.group {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.stopBtn {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background-color: #ef4444;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s;
+}
+
+.stopBtn:hover {
+  background-color: #dc2626;
+}
+
+.completedLabel {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #10b981;
+  background-color: rgba(16, 185, 129, 0.1);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
