@@ -107,11 +107,7 @@ function GitControls() {
   }
 
   async function handleCheckout(branch: string) {
-    if (!activeProject || branch === gitBranch) {
-      setOpen(false)
-      return
-    }
-    setOpen(false)
+    if (!activeProject || branch === gitBranch) return
     await engineCommand({
       action: 'git_checkout',
       branch,
