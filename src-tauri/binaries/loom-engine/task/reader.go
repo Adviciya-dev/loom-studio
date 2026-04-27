@@ -176,11 +176,14 @@ func parseTask(content, filename, filePath string) (Task, error) {
 		t.Status = StatusPending
 	}
 
-	// If no explicit prompt (or trivially short, e.g. just "---"), build a
-	// predefined prompt that points Claude at the task file so it reads and
-	// implements it directly.
-	stripped := strings.TrimSpace(strings.Trim(t.Prompt, "-\n\r "))
-	if stripped == "" {
+	// If no explicit prompt (or only placeholder content like "—", "---", "N/A",
+	// or empty code fences), build a predefined prompt that points Claude at the
+	// task file so it reads and implements it directly.
+	stripped := t.Prompt
+	for _, r := range []string{"```", "—", "-", "N/A", "n/a", " ", "\t", "\n", "\r"} {
+		stripped = strings.ReplaceAll(stripped, r, "")
+	}
+	if strings.TrimSpace(stripped) == "" {
 		t.Prompt = "Read the task file at `" + filePath + "` and implement everything described in it. " +
 			"Follow all sub-tasks, acceptance criteria, and technical notes exactly as specified. " +
 			"Do not ask for clarification — implement the full task as written."
