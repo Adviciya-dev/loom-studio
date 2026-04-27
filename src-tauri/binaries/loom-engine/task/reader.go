@@ -52,7 +52,13 @@ func ReadAll(harnessPath string) ([]Task, error) {
 			fmt.Fprintf(os.Stderr, "task: skipping %s: %v\n", path, err)
 			return nil
 		}
-		t, err := parseTask(string(data), name)
+		// Compute path relative to the project root (parent of harnessPath).
+		projectRoot := filepath.Dir(harnessPath)
+		relPath, relErr := filepath.Rel(projectRoot, path)
+		if relErr != nil {
+			relPath = path
+		}
+		t, err := parseTask(string(data), name, relPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "task: skipping %s: %v\n", path, err)
 			return nil
@@ -70,16 +76,11 @@ func ReadAll(harnessPath string) ([]Task, error) {
 	return tasks, nil
 }
 
-// parseTask parses a task markdown file in the project's native format:
-//
-//	# TASK-XXX: Title
-//	## Meta  (markdown table with Status, Due Date, etc.)
-//	## Description
-//	## Sub Tasks  (- [ ] / - [x] items)
-//	## Claude Code Context  (used as Prompt; falls back to full content if absent)
-func parseTask(content, filename string) (Task, error) {
+// parseTask parses a task markdown file. filePath is the path relative to the
+// project root, used to build a predefined prompt when no explicit prompt exists.
+func parseTask(content, filename, filePath string) (Task, error) {
 	lines := strings.Split(content, "\n")
-	t := Task{Filename: filename, Steps: make([]Step, 0)}
+	t := Task{Filename: filename, FilePath: filePath, Steps: make([]Step, 0)}
 
 	// Extract ID and title from the first # heading
 	for _, l := range lines {
@@ -175,10 +176,17 @@ func parseTask(content, filename string) (Task, error) {
 		t.Status = StatusPending
 	}
 
-	// If no explicit "## Claude Code Context" section, use the full file as the prompt
-	// so Claude receives complete context regardless of task format.
-	if t.Prompt == "" {
-		t.Prompt = strings.TrimSpace(content)
+	// If no explicit prompt (or only placeholder content like "—", "---", "N/A",
+	// or empty code fences), build a predefined prompt that points Claude at the
+	// task file so it reads and implements it directly.
+	stripped := t.Prompt
+	for _, r := range []string{"```", "—", "-", "N/A", "n/a", " ", "\t", "\n", "\r"} {
+		stripped = strings.ReplaceAll(stripped, r, "")
+	}
+	if strings.TrimSpace(stripped) == "" {
+		t.Prompt = "Read the task file at `" + filePath + "` and implement everything described in it. " +
+			"Follow all sub-tasks, acceptance criteria, and technical notes exactly as specified. " +
+			"Do not ask for clarification — implement the full task as written."
 	}
 
 	return t, nil

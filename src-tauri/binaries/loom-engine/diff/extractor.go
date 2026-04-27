@@ -9,10 +9,16 @@ import (
 // ErrNoDiff is returned when git diff produces no output (working tree is clean).
 var ErrNoDiff = errors.New("no changes in working tree")
 
-// Extract runs `git diff` in projectPath and returns the raw unified diff.
-// Returns ErrNoDiff when the output is empty (nothing to show).
+// Extract returns the unified diff of all uncommitted changes in projectPath.
+// It checks unstaged changes, staged changes, and untracked files in that order.
+// Returns ErrNoDiff when nothing has changed relative to HEAD.
 func Extract(projectPath string) (string, error) {
-	cmd := exec.Command("git", "diff")
+	// Stage everything so `git diff HEAD` captures new files too.
+	stageCmd := exec.Command("git", "add", "-A")
+	stageCmd.Dir = projectPath
+	_ = stageCmd.Run() // best-effort; ignore errors
+
+	cmd := exec.Command("git", "diff", "HEAD")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {

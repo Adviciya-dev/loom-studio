@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,14 +160,22 @@ func (m *Manager) Start(taskPrompt, projectPath, taskID, taskTitle string) error
 		sessionID := fmt.Sprintf("%d", time.Now().UnixNano())
 		raw, diffErr := diff.Extract(path)
 		if diffErr == diff.ErrNoDiff {
-			// Nothing left unstaged — all writes were approved inline, already clean.
+			// Nothing to diff — either no changes or Claude committed everything itself.
 			m.mu.Lock()
 			m.status = StatusCompleted
 			m.approvalCh = nil
 			m.mu.Unlock()
 			hash, commitErr := git.StageAndCommit(path, id, title)
 			if commitErr != nil {
-				m.emitter.EmitEngineError(fmt.Sprintf("commit: %v", commitErr))
+				if strings.Contains(commitErr.Error(), "nothing to commit") {
+					// Claude may have committed its own changes, or made no file changes.
+					// Treat as success using current HEAD.
+					hash, _ = git.HeadHash(path)
+					m.emitter.EmitLogLine("✓ Task complete (no uncommitted changes).")
+					m.emitter.EmitTaskComplete(id, hash)
+				} else {
+					m.emitter.EmitEngineError(fmt.Sprintf("commit: %v", commitErr))
+				}
 			} else {
 				m.emitter.EmitTaskComplete(id, hash)
 			}
@@ -194,7 +203,13 @@ func (m *Manager) Start(taskPrompt, projectPath, taskID, taskTitle string) error
 		m.status = StatusCompleted
 		m.mu.Unlock()
 		if commitErr != nil {
-			m.emitter.EmitEngineError(fmt.Sprintf("commit: %v", commitErr))
+			if strings.Contains(commitErr.Error(), "nothing to commit") {
+				hash, _ = git.HeadHash(path)
+				m.emitter.EmitLogLine("✓ Task complete (no uncommitted changes).")
+				m.emitter.EmitTaskComplete(id, hash)
+			} else {
+				m.emitter.EmitEngineError(fmt.Sprintf("commit: %v", commitErr))
+			}
 		} else {
 			m.emitter.EmitTaskComplete(id, hash)
 		}

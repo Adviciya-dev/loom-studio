@@ -30,4 +30,5 @@ type Task struct {
 	Steps       []Step   `json:"steps"`
 	Prompt      string   `json:"prompt"`
 	Filename    string   `json:"filename"`
+	FilePath    string   `json:"file_path"`
 }
