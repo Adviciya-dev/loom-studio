@@ -29,8 +29,10 @@ function TaskSelectModal() {
   const { state, dispatch } = useApp()
   const [tasks, setTasks] = useState<Task[]>([])
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all')
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const open = state.taskModalOpen
   useFocusTrap(modalRef, open)
@@ -40,6 +42,8 @@ function TaskSelectModal() {
 
     setLoading(true)
     setTasks([])
+    setSearch('')
+    setTimeout(() => searchRef.current?.focus(), 50)
     engineCommand({ action: 'get_tasks', path: state.activeProject.path + '/harness' }).catch(
       () => {}
     )
@@ -81,7 +85,12 @@ function TaskSelectModal() {
     return live ? { ...t, status: live.status } : t
   })
 
-  const visible = filter === 'all' ? mergedTasks : mergedTasks.filter((t) => t.status === filter)
+  const q = search.toLowerCase().trim()
+  const visible = mergedTasks.filter(
+    (t) =>
+      (filter === 'all' || t.status === filter) &&
+      (!q || t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q))
+  )
 
   return (
     <div className={styles.overlay} onClick={close} role="presentation">
@@ -98,6 +107,17 @@ function TaskSelectModal() {
           <button className={styles.closeBtn} onClick={close} aria-label="Close">
             ×
           </button>
+        </div>
+
+        <div className={styles.searchBar}>
+          <input
+            ref={searchRef}
+            className={styles.searchInput}
+            type="text"
+            placeholder="Search by ID or title…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         <div className={styles.filters}>
@@ -141,7 +161,9 @@ function TaskSelectModal() {
               </ol>
             </div>
           ) : visible.length === 0 ? (
-            <div className={styles.empty}>No tasks match this filter.</div>
+            <div className={styles.empty}>
+              {q ? `No tasks match "${search}".` : 'No tasks match this filter.'}
+            </div>
           ) : (
             visible.map((task) => (
               <div key={task.id} className={styles.taskItem}>

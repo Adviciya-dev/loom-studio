@@ -52,6 +52,34 @@
   background-color: var(--bg-hover);
 }
 
+.searchBar {
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:focus {
+  border-color: var(--accent);
+}
+
 .filters {
   display: flex;
   gap: var(--space-xs);
