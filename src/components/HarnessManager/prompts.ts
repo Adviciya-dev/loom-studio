@@ -175,7 +175,7 @@ export const TEST_CASE_PROMPT = (projectName: string) =>
 **Input:** The user has attached a task file from \`harness/tasks/\`. Use every sub-task and acceptance criterion in that file as the source of truth for what to test.
 
 > ⚠️ CRITICAL — OUTPUT LOCATION RULE:
-> ALL output files MUST be created inside \`harness/test-cases/\` — NEVER inside \`apps/\`, \`src/\`, \`packages/\`, or any application source directory.
+> ALL output files MUST be created inside \`harness/test_cases/\` — NEVER inside \`apps/\`, \`src/\`, \`packages/\`, or any application source directory.
 > The task file may list files like \`apps/admin/src/__tests__/\` — IGNORE those paths. They are the implementation files, not the test case document location.
 
 **Instructions — follow every step:**
@@ -184,11 +184,11 @@ export const TEST_CASE_PROMPT = (projectName: string) =>
 Read the task file title to determine the feature name (e.g. "Admin App · Meetings" → \`admin-meetings\`).
 
 Create the output directory and file at EXACTLY:
-\`harness/test-cases/<feature-name>/TEST-CASES-<feature-name>.md\`
+\`harness/test_cases/<feature-name>/TEST-CASES-<feature-name>.md\`
 
-Run \`mkdir -p harness/test-cases/<feature-name>\` first.
+Run \`mkdir -p harness/test_cases/<feature-name>\` first.
 
-Do NOT create any files outside of \`harness/test-cases/\`.
+Do NOT create any files outside of \`harness/test_cases/\`.
 
 ### Step 2: Generate test cases for every test type
 For each test type listed in the QA task sub-tasks, generate a full set of test cases. Every test case must include:
