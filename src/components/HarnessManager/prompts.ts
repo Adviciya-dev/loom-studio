@@ -170,18 +170,25 @@ Create all feature files now in a single pass. Do not ask for confirmation.
 Be concrete and specific throughout — a developer reading a file must have zero ambiguity about what to build. Avoid vague phrases like "handle errors appropriately" or "show a loading state". Always specify exact behaviour.`
 
 export const TEST_CASE_PROMPT = (projectName: string) =>
-  `You are generating a detailed, executable test case document for "${projectName}" based on the attached QA task file.
+  `You are generating a detailed, executable test case document for "${projectName}" based on the attached task file.
 
-**Input:** The user has attached a QA task file (e.g. \`harness/tasks/authentication/TASK-007-authentication-qa.md\`). Use every sub-task and acceptance criterion in that file as the source of truth.
+**Input:** The user has attached a task file from \`harness/tasks/\`. Use every sub-task and acceptance criterion in that file as the source of truth for what to test.
+
+> ⚠️ CRITICAL — OUTPUT LOCATION RULE:
+> ALL output files MUST be created inside \`harness/test-cases/\` — NEVER inside \`apps/\`, \`src/\`, \`packages/\`, or any application source directory.
+> The task file may list files like \`apps/admin/src/__tests__/\` — IGNORE those paths. They are the implementation files, not the test case document location.
 
 **Instructions — follow every step:**
 
 ### Step 1: Identify the feature and output path
-Determine the feature name from the attached QA task file.
-Create the output directory and file at:
+Read the task file title to determine the feature name (e.g. "Admin App · Meetings" → \`admin-meetings\`).
+
+Create the output directory and file at EXACTLY:
 \`harness/test-cases/<feature-name>/TEST-CASES-<feature-name>.md\`
 
-Run \`mkdir -p harness/test-cases/<feature-name>\` first if it does not exist.
+Run \`mkdir -p harness/test-cases/<feature-name>\` first.
+
+Do NOT create any files outside of \`harness/test-cases/\`.
 
 ### Step 2: Generate test cases for every test type
 For each test type listed in the QA task sub-tasks, generate a full set of test cases. Every test case must include:
