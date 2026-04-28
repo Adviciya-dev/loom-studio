@@ -266,6 +266,7 @@
 .rowActions {
   display: flex;
   gap: var(--space-xs);
+  justify-content: flex-end;
 }
 
 /* ── Commit section ─────────────────────────────────────── */
