@@ -267,6 +267,7 @@
   display: flex;
   gap: var(--space-xs);
   justify-content: flex-end;
+  margin-top: var(--space-xs);
 }
 
 /* ── Commit section ─────────────────────────────────────── */
