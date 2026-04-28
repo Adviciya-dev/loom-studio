@@ -16,6 +16,8 @@ function GitControls() {
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [pushing, setPushing] = useState(false)
+  const [showPullPicker, setShowPullPicker] = useState(false)
+  const [pullBranch, setPullBranch] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [unlocking, setUnlocking] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -84,13 +86,20 @@ function GitControls() {
     setFetching(false)
   }
 
-  async function handlePull() {
+  function handlePull() {
     if (!activeProject || remoteOpsDisabled || !gitBranch) return
+    setPullBranch(gitBranch)
+    setShowPullPicker(true)
+  }
+
+  async function confirmPull() {
+    if (!activeProject || !pullBranch) return
+    setShowPullPicker(false)
     setPulling(true)
     await engineCommand({
       action: 'git_pull',
       project_path: activeProject.path,
-      branch: gitBranch,
+      branch: pullBranch,
     }).catch(() => {})
     setPulling(false)
   }
@@ -186,12 +195,42 @@ function GitControls() {
                     Push
                   </button>
                 </div>
+                {showPullPicker && !remoteOpsDisabled && (
+                  <div className={styles.pullPicker}>
+                    <span className={styles.pullPickerLabel}>Pull from branch:</span>
+                    <select
+                      className={styles.pullSelect}
+                      value={pullBranch}
+                      onChange={(e) => setPullBranch(e.target.value)}
+                      autoFocus
+                    >
+                      {gitBranches.map((b) => (
+                        <option key={b} value={b}>
+                          {b}
+                          {b === gitBranch ? ' (current)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div className={styles.rowActions}>
+                      <button className={styles.cancelBtn} onClick={() => setShowPullPicker(false)}>
+                        Cancel
+                      </button>
+                      <button
+                        className={styles.primaryBtn}
+                        onClick={confirmPull}
+                        disabled={!pullBranch}
+                      >
+                        Pull
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {remoteOpsDisabled && (
                   <div className={styles.remoteStatus}>
                     <span className={styles.spinner} />
                     <span>
                       {fetching && 'Fetching from origin…'}
-                      {pulling && `Pulling from origin/${gitBranch}…`}
+                      {pulling && `Pulling from origin/${pullBranch || gitBranch}…`}
                       {pushing && `Pushing to origin/${gitBranch}…`}
                     </span>
                   </div>
