@@ -86,11 +86,11 @@ function TaskSelectModal() {
   })
 
   const q = search.toLowerCase().trim()
-  const visible = mergedTasks.filter(
-    (t) =>
-      (filter === 'all' || t.status === filter) &&
-      (!q || t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q))
-  )
+  const visible = mergedTasks.filter((t) => {
+    const statusMatch = filter === 'all' || (t.status ?? 'pending') === filter
+    const searchMatch = !q || t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q)
+    return statusMatch && searchMatch
+  })
 
   return (
     <div className={styles.overlay} onClick={close} role="presentation">
