@@ -65,6 +65,11 @@ export default function ProjectSelector() {
     dispatch({ type: 'SET_HARNESS_EMPTY', empty: tasks.length === 0 })
   }
 
+  async function handleRemoveProject(id: string) {
+    await engineCommand({ action: 'remove_project', id }).catch(() => {})
+    dispatch({ type: 'REMOVE_PROJECT', id })
+  }
+
   async function handleSelectProject(project: Project) {
     setOpen(false)
     await engineCommand({ action: 'set_active_project', id: project.id })
@@ -99,6 +104,7 @@ export default function ProjectSelector() {
           activeProjectId={activeProject?.id ?? null}
           onSelect={handleSelectProject}
           onAdd={handleAddProject}
+          onRemove={handleRemoveProject}
         />
       )}
     </div>

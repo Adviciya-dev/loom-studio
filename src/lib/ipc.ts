@@ -22,6 +22,7 @@ export const engineCommand = (payload: EngineCommand): Promise<void> =>
 export type EngineCommand =
   | { action: 'get_projects' }
   | { action: 'save_project'; project: Project }
+  | { action: 'remove_project'; id: string }
   | { action: 'set_active_project'; id: string }
   | { action: 'get_preferences' }
   | { action: 'save_preferences'; preferences: Preferences }

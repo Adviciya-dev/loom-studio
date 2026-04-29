@@ -93,6 +93,18 @@ func main() {
 			}
 			emitter.Emit("projects", st.Projects())
 
+		case "remove_project":
+			var id string
+			if err := json.Unmarshal(cmd["id"], &id); err != nil {
+				emitter.EmitEngineError("remove_project: invalid id")
+				continue
+			}
+			if err := st.RemoveProject(id); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("remove_project: %v", err))
+				continue
+			}
+			emitter.Emit("projects", st.Projects())
+
 		case "set_active_project":
 			var id string
 			if err := json.Unmarshal(cmd["id"], &id); err != nil {

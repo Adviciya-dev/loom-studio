@@ -98,6 +98,21 @@ func (s *Store) SaveProject(p Project) error {
 	return s.Save()
 }
 
+// RemoveProject deletes a project by ID and persists.
+func (s *Store) RemoveProject(id string) error {
+	next := make([]Project, 0, len(s.state.Projects))
+	for _, p := range s.state.Projects {
+		if p.ID != id {
+			next = append(next, p)
+		}
+	}
+	s.state.Projects = next
+	if s.state.ActiveProjectID == id {
+		s.state.ActiveProjectID = ""
+	}
+	return s.Save()
+}
+
 // SetActiveProject updates the active project ID and persists.
 func (s *Store) SetActiveProject(id string) error {
 	s.state.ActiveProjectID = id

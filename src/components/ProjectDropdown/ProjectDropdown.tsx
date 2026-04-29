@@ -6,9 +6,16 @@ interface Props {
   activeProjectId: string | null
   onSelect: (project: Project) => void
   onAdd: () => void
+  onRemove: (id: string) => void
 }
 
-export default function ProjectDropdown({ projects, activeProjectId, onSelect, onAdd }: Props) {
+export default function ProjectDropdown({
+  projects,
+  activeProjectId,
+  onSelect,
+  onAdd,
+  onRemove,
+}: Props) {
   return (
     <div className={styles.dropdown}>
       {projects.length === 0 ? (
@@ -16,7 +23,7 @@ export default function ProjectDropdown({ projects, activeProjectId, onSelect, o
       ) : (
         <ul className={styles.list}>
           {projects.map((p) => (
-            <li key={p.id}>
+            <li key={p.id} className={styles.row}>
               <button
                 className={`${styles.item} ${p.id === activeProjectId ? styles.active : ''}`}
                 onClick={() => onSelect(p)}
@@ -24,6 +31,16 @@ export default function ProjectDropdown({ projects, activeProjectId, onSelect, o
                 <span className={styles.dot} style={{ backgroundColor: p.color }} />
                 <span className={styles.name}>{p.name}</span>
                 {p.id === activeProjectId && <span className={styles.check}>✓</span>}
+              </button>
+              <button
+                className={styles.removeBtn}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemove(p.id)
+                }}
+                title="Remove project"
+              >
+                ×
               </button>
             </li>
           ))}

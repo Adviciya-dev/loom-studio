@@ -66,6 +66,7 @@ export const initialState: AppState = {
 
 export type AppAction =
   | { type: 'SET_PROJECTS'; projects: Project[] }
+  | { type: 'REMOVE_PROJECT'; id: string }
   | { type: 'SET_ACTIVE_PROJECT'; project: Project | null }
   | { type: 'SET_HARNESS_EMPTY'; empty: boolean }
   | { type: 'ADD_TASK'; task: Task }
