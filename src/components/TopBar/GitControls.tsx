@@ -1,23 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
-import { onGitPullDiverged, onGitPullConflicts, onGitMergeAborted } from '@/lib/events'
+import { onGitPullDiverged } from '@/lib/events'
 import styles from './GitControls.module.css'
 
 function GitControls() {
-  const { state, dispatch } = useApp()
-  const {
-    activeProject,
-    gitBranch,
-    gitBranches,
-    gitRemoteUrl,
-    gitAhead,
-    gitBehind,
-    gitSshError,
-    gitHasConflicts,
-    gitConflictFiles,
-  } = state
+  const { state } = useApp()
+  const { activeProject, gitBranch, gitBranches, gitRemoteUrl, gitAhead, gitBehind, gitSshError } =
+    state
   const [open, setOpen] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
@@ -30,7 +20,6 @@ function GitControls() {
   const [showPullPicker, setShowPullPicker] = useState(false)
   const [pullBranch, setPullBranch] = useState('')
   const [pullDiverged, setPullDiverged] = useState(false)
-  const [abortingMerge, setAbortingMerge] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [unlocking, setUnlocking] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -85,29 +74,6 @@ function GitControls() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for merge conflict and abort events.
-  useEffect(() => {
-    let c1: (() => void) | null = null
-    let c2: (() => void) | null = null
-    onGitPullConflicts((files) => {
-      dispatch({ type: 'SET_GIT_CONFLICTS', files })
-      setPulling(false)
-      setOpen(true)
-    }).then((fn) => {
-      c1 = fn
-    })
-    onGitMergeAborted(() => {
-      dispatch({ type: 'CLEAR_GIT_CONFLICTS' })
-      setAbortingMerge(false)
-    }).then((fn) => {
-      c2 = fn
-    })
-    return () => {
-      c1?.()
-      c2?.()
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   if (!activeProject) return null
 
   const remoteLabel = gitRemoteUrl
@@ -148,7 +114,6 @@ function GitControls() {
     if (!activeProject || !pullBranch) return
     setShowPullPicker(false)
     setPullDiverged(false)
-    dispatch({ type: 'CLEAR_GIT_CONFLICTS' })
     setPulling(true)
     await engineCommand({
       action: 'git_pull',
@@ -157,16 +122,6 @@ function GitControls() {
       ...(strategy ? { strategy } : {}),
     }).catch(() => {})
     setPulling(false)
-  }
-
-  async function handleMergeAbort() {
-    if (!activeProject || abortingMerge) return
-    setAbortingMerge(true)
-    await engineCommand({ action: 'git_merge_abort', project_path: activeProject.path }).catch(
-      () => {
-        setAbortingMerge(false)
-      }
-    )
   }
 
   async function handlePush() {
@@ -227,44 +182,6 @@ function GitControls() {
 
       {open && (
         <div className={styles.dropdown}>
-          {/* Conflict panel — shown at top so it's always visible */}
-          {gitHasConflicts && !remoteOpsDisabled && (
-            <div className={styles.conflictPanel}>
-              <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
-              <p className={styles.conflictHint}>
-                Resolve conflicts in your editor, then commit. Or abort to undo the merge.
-              </p>
-              {gitConflictFiles.length > 0 && (
-                <div className={styles.conflictFiles}>
-                  {gitConflictFiles.map((f) => (
-                    <div key={f} className={styles.conflictFile}>
-                      <span className={styles.conflictFileDot}>●</span>
-                      <span className={styles.conflictFilePath}>{f}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className={styles.conflictActions}>
-                <button
-                  className={styles.openEditorBtn}
-                  onClick={() =>
-                    invoke('open_in_editor', { path: activeProject.path }).catch(() => {})
-                  }
-                  title="Open project in VS Code or system editor"
-                >
-                  ✎ Open in Editor
-                </button>
-                <button
-                  className={styles.abortBtn}
-                  onClick={handleMergeAbort}
-                  disabled={abortingMerge}
-                >
-                  {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Remote section */}
           <div className={styles.remoteSection}>
             {remoteLabel ? (

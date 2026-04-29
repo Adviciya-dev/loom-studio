@@ -299,18 +299,6 @@ func main() {
 			}
 			emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
 
-			// Check for conflict files — first via unmerged index, then by
-			// scanning for leftover conflict markers in modified files.
-			conflictFiles := git.UnmergedFiles(projectPath)
-			if len(conflictFiles) == 0 {
-				conflictFiles = git.ConflictMarkerFiles(projectPath)
-			}
-			if len(conflictFiles) > 0 {
-				emitter.Emit("git_pull_conflicts", map[string]interface{}{"files": conflictFiles, "branch": branch})
-			} else {
-				emitter.Emit("git_merge_aborted", nil) // clear stale conflict state
-			}
-
 		case "git_checkout":
 			var projectPath, branch string
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
@@ -421,9 +409,6 @@ func main() {
 			if err := git.Pull(projectPath, branch, strategy); err != nil {
 				if err == git.ErrDivergentBranches {
 					emitter.Emit("git_pull_diverged", map[string]string{"branch": branch, "project_path": projectPath})
-				} else if ce, ok := err.(*git.MergeConflictError); ok {
-					emitter.EmitLogLine(fmt.Sprintf("⚠ Merge conflicts in %d file(s). Resolve them then commit, or abort the merge.", len(ce.Files)))
-					emitter.Emit("git_pull_conflicts", map[string]interface{}{"files": ce.Files, "branch": branch})
 				} else {
 					emitter.EmitEngineError(fmt.Sprintf("Pull failed: %v", err))
 				}
@@ -438,23 +423,6 @@ func main() {
 			emitter.Emit("git_remote_info", map[string]interface{}{
 				"url": url, "ahead": ahead, "behind": behind,
 			})
-
-		case "git_merge_abort":
-			var projectPath string
-			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
-				emitter.EmitEngineError("git_merge_abort: missing project_path")
-				continue
-			}
-			emitter.EmitLogLine("Aborting merge…")
-			if err := git.MergeAbort(projectPath); err != nil {
-				emitter.EmitEngineError(fmt.Sprintf("Merge abort failed: %v", err))
-				continue
-			}
-			emitter.EmitLogLine("✓ Merge aborted. Working tree restored.")
-			emitter.Emit("git_merge_aborted", nil)
-			branch, _ := git.GetCurrentBranch(projectPath)
-			branches, _ := git.ListBranches(projectPath)
-			emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
 
 		case "git_push":
 			var projectPath, branch string
