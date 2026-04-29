@@ -180,6 +180,18 @@ func main() {
 				branch, _ := git.GetCurrentBranch(projectPath)
 				branches, _ := git.ListBranches(projectPath)
 				emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
+
+				// Mark the task as in-progress in the file and append a completion
+				// instruction to the prompt so Claude updates it when done.
+				if relPath, err := task.MarkTaskStarted(projectPath, taskID); err == nil {
+					prompt += "\n\n---\n" +
+						"When you have finished implementing everything above, update the task file at `" + relPath + "`:\n" +
+						"- Set the **Status** field to `✅ Completed`\n" +
+						"- Set the **Completed** date field to today's date (YYYY-MM-DD format)\n" +
+						"Make this the very last thing you do."
+				} else {
+					emitter.EmitLogLine("warn: could not mark task started: " + err.Error())
+				}
 			}
 
 			if err := manager.Start(prompt, projectPath, taskID, taskTitle); err != nil {

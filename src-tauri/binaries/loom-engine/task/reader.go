@@ -8,7 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
+
+var timeNow = time.Now
 
 var (
 	reH1      = regexp.MustCompile(`^#\s+(.+)`)
@@ -193,13 +196,14 @@ func parseTask(content, filename, filePath string) (Task, error) {
 }
 
 var reStatusRow = regexp.MustCompile(`(?i)^\|\s*\*\*Status\*\*\s*\|`)
+var reStartDateRow = regexp.MustCompile(`(?i)^\|\s*\*\*Start\s+Date\*\*\s*\|`)
+var reCompletedRow = regexp.MustCompile(`(?i)^\|\s*\*\*Completed\*\*\s*\|`)
 
-// UpdateTaskStatus finds the task file matching taskID inside
-// projectPath/harness/tasks/ and rewrites the Status cell to "✅ Completed".
-func UpdateTaskStatus(projectPath, taskID string) error {
+// findTaskFile walks projectPath/harness/tasks/ and returns the absolute path
+// of the first .md file whose parsed ID matches taskID.
+func findTaskFile(projectPath, taskID string) string {
 	tasksDir := filepath.Join(projectPath, "harness", "tasks")
-
-	var targetPath string
+	var found string
 	_ = filepath.WalkDir(tasksDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -217,34 +221,58 @@ func UpdateTaskStatus(projectPath, taskID string) error {
 			return nil
 		}
 		if t.ID == taskID {
-			targetPath = path
+			found = path
 			return filepath.SkipAll
 		}
 		return nil
 	})
+	return found
+}
 
-	if targetPath == "" {
-		return fmt.Errorf("task file for %s not found", taskID)
-	}
-
-	data, err := os.ReadFile(targetPath)
-	if err != nil {
-		return err
-	}
-
-	lines := strings.Split(string(data), "\n")
+// patchRow replaces the value cell of the first matching Meta table row.
+func patchRow(lines []string, re *regexp.Regexp, value string) {
 	for i, line := range lines {
-		if reStatusRow.MatchString(line) {
+		if re.MatchString(line) {
 			parts := strings.Split(line, "|")
 			if len(parts) >= 4 {
-				parts[2] = " ✅ Completed "
+				parts[2] = " " + value + " "
 				lines[i] = strings.Join(parts, "|")
 			}
 			break
 		}
 	}
+}
 
-	return os.WriteFile(targetPath, []byte(strings.Join(lines, "\n")), 0o644)
+// MarkTaskStarted sets Status → "🔄 In Progress" and Start Date → today in the
+// task file, then returns the path relative to projectPath so it can be
+// embedded in the Claude prompt for the completion instruction.
+func MarkTaskStarted(projectPath, taskID string) (relPath string, err error) {
+	absPath := findTaskFile(projectPath, taskID)
+	if absPath == "" {
+		return "", fmt.Errorf("task file for %s not found", taskID)
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", err
+	}
+
+	now := timeNow()
+	today := fmt.Sprintf("%d-%02d-%02d", now.Year(), int(now.Month()), now.Day())
+
+	lines := strings.Split(string(data), "\n")
+	patchRow(lines, reStatusRow, "🔄 In Progress")
+	patchRow(lines, reStartDateRow, today)
+
+	if err := os.WriteFile(absPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		return "", err
+	}
+
+	rel, err := filepath.Rel(projectPath, absPath)
+	if err != nil {
+		rel = absPath
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // normaliseStatus maps emoji/text status values to canonical Status constants.
