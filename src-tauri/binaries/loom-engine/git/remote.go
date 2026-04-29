@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -108,19 +109,52 @@ func Pull(projectPath, branch, strategy string) error {
 	return nil
 }
 
-// UnmergedFiles returns paths that have unresolved merge conflicts
-// (those listed by `git diff --name-only --diff-filter=U`).
+// UnmergedFiles returns paths that have unresolved merge conflicts.
+// It checks for .git/MERGE_HEAD (active merge) or .git/rebase-merge/
+// (active rebase), then lists unmerged paths from the index via
+// `git ls-files -u`, which is reliable even after lint-staged stash/revert.
 func UnmergedFiles(projectPath string) []string {
-	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
+	// Detect an in-progress merge or rebase.
+	mergeHead := filepath.Join(projectPath, ".git", "MERGE_HEAD")
+	rebaseMerge := filepath.Join(projectPath, ".git", "rebase-merge")
+	rebaseApply := filepath.Join(projectPath, ".git", "rebase-apply")
+
+	_, hasMerge := os.Stat(mergeHead)
+	_, hasRebaseMerge := os.Stat(rebaseMerge)
+	_, hasRebaseApply := os.Stat(rebaseApply)
+
+	if hasMerge != nil && hasRebaseMerge != nil && hasRebaseApply != nil {
+		return nil // no merge/rebase in progress
+	}
+
+	// List unmerged index entries — format: "mode hash stage\tpath"
+	cmd := exec.Command("git", "ls-files", "-u")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
-	if err != nil {
-		return nil
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		// Fallback: git diff --diff-filter=U
+		cmd2 := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
+		cmd2.Dir = projectPath
+		out2, _ := cmd2.Output()
+		var files []string
+		for _, line := range strings.Split(strings.TrimSpace(string(out2)), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				files = append(files, line)
+			}
+		}
+		return files
 	}
+
+	seen := map[string]bool{}
 	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			files = append(files, line)
+	for _, line := range strings.Split(string(out), "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 {
+			path := strings.TrimSpace(parts[1])
+			if path != "" && !seen[path] {
+				seen[path] = true
+				files = append(files, path)
+			}
 		}
 	}
 	return files
