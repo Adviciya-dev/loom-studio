@@ -223,6 +223,44 @@ function GitControls() {
 
       {open && (
         <div className={styles.dropdown}>
+          {/* Conflict panel — shown at top so it's always visible */}
+          {hasConflicts && !remoteOpsDisabled && (
+            <div className={styles.conflictPanel}>
+              <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
+              <p className={styles.conflictHint}>
+                Resolve conflicts in your editor, then commit. Or abort to undo the merge.
+              </p>
+              {conflictFiles.length > 0 && (
+                <div className={styles.conflictFiles}>
+                  {conflictFiles.map((f) => (
+                    <div key={f} className={styles.conflictFile}>
+                      <span className={styles.conflictFileDot}>●</span>
+                      <span className={styles.conflictFilePath}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className={styles.conflictActions}>
+                <button
+                  className={styles.openEditorBtn}
+                  onClick={() =>
+                    invoke('open_in_editor', { path: activeProject.path }).catch(() => {})
+                  }
+                  title="Open project in VS Code or system editor"
+                >
+                  ✎ Open in Editor
+                </button>
+                <button
+                  className={styles.abortBtn}
+                  onClick={handleMergeAbort}
+                  disabled={abortingMerge}
+                >
+                  {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Remote section */}
           <div className={styles.remoteSection}>
             {remoteLabel ? (
@@ -316,40 +354,6 @@ function GitControls() {
                     <button className={styles.cancelBtn} onClick={() => setPullDiverged(false)}>
                       Cancel
                     </button>
-                  </div>
-                )}
-                {hasConflicts && !remoteOpsDisabled && (
-                  <div className={styles.conflictPanel}>
-                    <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
-                    <p className={styles.conflictHint}>
-                      Resolve conflicts in your editor, then commit. Or abort to undo the merge.
-                    </p>
-                    <div className={styles.conflictFiles}>
-                      {conflictFiles.map((f) => (
-                        <div key={f} className={styles.conflictFile}>
-                          <span className={styles.conflictFileDot}>●</span>
-                          <span className={styles.conflictFilePath}>{f}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className={styles.conflictActions}>
-                      <button
-                        className={styles.openEditorBtn}
-                        onClick={() =>
-                          invoke('open_in_editor', { path: activeProject.path }).catch(() => {})
-                        }
-                        title="Open project in VS Code or system editor"
-                      >
-                        ✎ Open in Editor
-                      </button>
-                      <button
-                        className={styles.abortBtn}
-                        onClick={handleMergeAbort}
-                        disabled={abortingMerge}
-                      >
-                        {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
-                      </button>
-                    </div>
                   </div>
                 )}
                 {remoteOpsDisabled && (
