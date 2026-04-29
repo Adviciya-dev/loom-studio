@@ -110,5 +110,12 @@ export const onGhPrListResult = (cb: (prs: GhPrPayload[]) => void) =>
 export const onGitPullDiverged = (cb: (branch: string) => void) =>
   listen<{ branch: string }>('git_pull_diverged', (e) => cb(e.payload.branch))
 
+export const onGitPullConflicts = (cb: (files: string[], branch: string) => void) =>
+  listen<{ files: string[]; branch: string }>('git_pull_conflicts', (e) =>
+    cb(e.payload.files, e.payload.branch)
+  )
+
+export const onGitMergeAborted = (cb: () => void) => listen<null>('git_merge_aborted', () => cb())
+
 export const onTemplates = (cb: (templates: HarnessTemplate[]) => void) =>
   listen<HarnessTemplate[]>('templates', (e) => cb(e.payload))

@@ -60,6 +60,13 @@ func Fetch(projectPath string) error {
 // and no reconcile strategy has been configured.
 var ErrDivergentBranches = fmt.Errorf("divergent_branches")
 
+// MergeConflictError holds the list of files that have merge conflicts.
+type MergeConflictError struct {
+	Files []string
+}
+
+func (e *MergeConflictError) Error() string { return "merge_conflicts" }
+
 // Pull runs `git pull origin <branch>`. strategy may be "merge", "rebase",
 // "ff-only", or "" (let git use its default, which may error on divergence).
 func Pull(projectPath, branch, strategy string) error {
@@ -74,12 +81,45 @@ func Pull(projectPath, branch, strategy string) error {
 	}
 	args = append(args, "origin", branch)
 	out, err := gitCmd(projectPath, args...).CombinedOutput()
+	msg := strings.TrimSpace(string(out))
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "divergent") || strings.Contains(msg, "reconcile") {
 			return ErrDivergentBranches
 		}
+		// Parse conflict file list from output lines like "CONFLICT (...): path"
+		var conflicts []string
+		for _, line := range strings.Split(msg, "\n") {
+			if strings.HasPrefix(line, "CONFLICT") {
+				// "CONFLICT (content): Merge conflict in path/to/file"
+				if idx := strings.LastIndex(line, " in "); idx != -1 {
+					conflicts = append(conflicts, strings.TrimSpace(line[idx+4:]))
+				}
+			}
+		}
+		if len(conflicts) > 0 {
+			return &MergeConflictError{Files: conflicts}
+		}
+		// Already in a conflicted state (unmerged files)
+		if strings.Contains(msg, "unmerged files") || strings.Contains(msg, "Merge conflict") {
+			return &MergeConflictError{Files: []string{}}
+		}
 		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+// MergeAbort runs `git merge --abort` to undo a failed merge.
+// Falls back to `git rebase --abort` when a rebase strategy was used.
+func MergeAbort(projectPath string) error {
+	cmd := exec.Command("git", "merge", "--abort")
+	cmd.Dir = projectPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		cmd2 := exec.Command("git", "rebase", "--abort")
+		cmd2.Dir = projectPath
+		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
+			_ = out
+			return fmt.Errorf("%s", strings.TrimSpace(string(out2)))
+		}
 	}
 	return nil
 }

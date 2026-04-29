@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
-import { onGitPullDiverged } from '@/lib/events'
+import { onGitPullDiverged, onGitPullConflicts, onGitMergeAborted } from '@/lib/events'
 import styles from './GitControls.module.css'
 
 function GitControls() {
@@ -20,6 +20,8 @@ function GitControls() {
   const [showPullPicker, setShowPullPicker] = useState(false)
   const [pullBranch, setPullBranch] = useState('')
   const [pullDiverged, setPullDiverged] = useState(false)
+  const [conflictFiles, setConflictFiles] = useState<string[]>([])
+  const [abortingMerge, setAbortingMerge] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [unlocking, setUnlocking] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -74,6 +76,29 @@ function GitControls() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Listen for merge conflict and abort events.
+  useEffect(() => {
+    let c1: (() => void) | null = null
+    let c2: (() => void) | null = null
+    onGitPullConflicts((files) => {
+      setConflictFiles(files)
+      setPulling(false)
+      setOpen(true)
+    }).then((fn) => {
+      c1 = fn
+    })
+    onGitMergeAborted(() => {
+      setConflictFiles([])
+      setAbortingMerge(false)
+    }).then((fn) => {
+      c2 = fn
+    })
+    return () => {
+      c1?.()
+      c2?.()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!activeProject) return null
 
   const remoteLabel = gitRemoteUrl
@@ -122,6 +147,16 @@ function GitControls() {
       ...(strategy ? { strategy } : {}),
     }).catch(() => {})
     setPulling(false)
+  }
+
+  async function handleMergeAbort() {
+    if (!activeProject || abortingMerge) return
+    setAbortingMerge(true)
+    await engineCommand({ action: 'git_merge_abort', project_path: activeProject.path }).catch(
+      () => {
+        setAbortingMerge(false)
+      }
+    )
   }
 
   async function handlePush() {
@@ -274,6 +309,29 @@ function GitControls() {
                     </div>
                     <button className={styles.cancelBtn} onClick={() => setPullDiverged(false)}>
                       Cancel
+                    </button>
+                  </div>
+                )}
+                {conflictFiles.length > 0 && !remoteOpsDisabled && (
+                  <div className={styles.conflictPanel}>
+                    <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
+                    <p className={styles.conflictHint}>
+                      Resolve conflicts in your editor, then commit. Or abort to undo the merge.
+                    </p>
+                    <div className={styles.conflictFiles}>
+                      {conflictFiles.map((f) => (
+                        <div key={f} className={styles.conflictFile}>
+                          <span className={styles.conflictFileDot}>●</span>
+                          <span className={styles.conflictFilePath}>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      className={styles.abortBtn}
+                      onClick={handleMergeAbort}
+                      disabled={abortingMerge}
+                    >
+                      {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
                     </button>
                   </div>
                 )}
