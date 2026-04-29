@@ -393,7 +393,7 @@ func main() {
 			})
 
 		case "git_pull":
-			var projectPath, branch string
+			var projectPath, branch, strategy string
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
 				emitter.EmitEngineError("git_pull: missing project_path")
 				continue
@@ -402,9 +402,16 @@ func main() {
 				emitter.EmitEngineError("git_pull: missing branch")
 				continue
 			}
+			if raw, ok := cmd["strategy"]; ok {
+				json.Unmarshal(raw, &strategy) //nolint:errcheck
+			}
 			emitter.EmitLogLine("Pulling from origin/" + branch + "…")
-			if err := git.Pull(projectPath, branch); err != nil {
-				emitter.EmitEngineError(fmt.Sprintf("Pull failed: %v", err))
+			if err := git.Pull(projectPath, branch, strategy); err != nil {
+				if err == git.ErrDivergentBranches {
+					emitter.Emit("git_pull_diverged", map[string]string{"branch": branch, "project_path": projectPath})
+				} else {
+					emitter.EmitEngineError(fmt.Sprintf("Pull failed: %v", err))
+				}
 				continue
 			}
 			emitter.EmitLogLine("✓ Pulled from origin/" + branch)

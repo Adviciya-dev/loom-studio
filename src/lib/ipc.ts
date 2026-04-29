@@ -56,7 +56,12 @@ export type EngineCommand =
     }
   | { action: 'gh_pr_list'; project_path: string }
   | { action: 'git_fetch'; project_path: string; branch: string }
-  | { action: 'git_pull'; project_path: string; branch: string }
+  | {
+      action: 'git_pull'
+      project_path: string
+      branch: string
+      strategy?: 'merge' | 'rebase' | 'ff-only'
+    }
   | { action: 'git_push'; project_path: string; branch: string }
   | { action: 'git_checkout'; branch: string; project_path: string }
   | { action: 'git_create_branch'; branch: string; project_path: string }
