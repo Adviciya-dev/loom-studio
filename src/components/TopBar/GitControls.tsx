@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import { onGitPullDiverged, onGitPullConflicts, onGitMergeAborted } from '@/lib/events'
@@ -326,13 +327,24 @@ function GitControls() {
                         </div>
                       ))}
                     </div>
-                    <button
-                      className={styles.abortBtn}
-                      onClick={handleMergeAbort}
-                      disabled={abortingMerge}
-                    >
-                      {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
-                    </button>
+                    <div className={styles.conflictActions}>
+                      <button
+                        className={styles.openEditorBtn}
+                        onClick={() =>
+                          invoke('open_in_editor', { path: activeProject.path }).catch(() => {})
+                        }
+                        title="Open project in VS Code or system editor"
+                      >
+                        ✎ Open in Editor
+                      </button>
+                      <button
+                        className={styles.abortBtn}
+                        onClick={handleMergeAbort}
+                        disabled={abortingMerge}
+                      >
+                        {abortingMerge ? 'Aborting…' : '↩ Abort merge'}
+                      </button>
+                    </div>
                   </div>
                 )}
                 {remoteOpsDisabled && (

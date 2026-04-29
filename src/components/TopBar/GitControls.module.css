@@ -237,6 +237,28 @@
   line-height: 1.5;
 }
 
+.conflictActions {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.openEditorBtn {
+  padding: 5px var(--space-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: 1px solid rgba(124, 108, 252, 0.3);
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
+}
+
+.openEditorBtn:hover {
+  background: rgba(124, 108, 252, 0.2);
+  border-color: var(--accent);
+}
+
 .abortBtn {
   padding: 5px var(--space-sm);
   font-size: var(--font-size-xs);

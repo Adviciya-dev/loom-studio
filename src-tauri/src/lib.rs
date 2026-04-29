@@ -70,6 +70,7 @@ pub fn run() {
             commands::read_directory,
             commands::read_file_content,
             commands::write_file_content,
+            commands::open_in_editor,
             commands::invoke_claude,
             commands::stop_harness_chat,
             commands::git_log_branch,

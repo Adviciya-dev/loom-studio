@@ -394,3 +394,43 @@ pub fn read_file_content(path: String) -> Result<String, String> {
     }
     fs::read_to_string(p).map_err(|_| "Cannot display binary file".to_string())
 }
+
+/// Opens a path in VS Code if available, otherwise falls back to the OS default.
+/// On macOS: `open -a "Visual Studio Code" <path>` → `open <path>`
+/// On Windows: `code <path>` → `explorer <path>`
+/// On Linux: `code <path>` → `xdg-open <path>`
+#[tauri::command]
+pub fn open_in_editor(path: String) -> Result<(), String> {
+    // Try VS Code first (works on all platforms when `code` is on PATH).
+    let vscode = std::process::Command::new("code")
+        .arg(&path)
+        .spawn();
+
+    if vscode.is_ok() {
+        return Ok(());
+    }
+
+    // Platform-specific fallback.
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
