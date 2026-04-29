@@ -108,6 +108,24 @@ func Pull(projectPath, branch, strategy string) error {
 	return nil
 }
 
+// UnmergedFiles returns paths that have unresolved merge conflicts
+// (those listed by `git diff --name-only --diff-filter=U`).
+func UnmergedFiles(projectPath string) []string {
+	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files
+}
+
 // MergeAbort runs `git merge --abort` to undo a failed merge.
 // Falls back to `git rebase --abort` when a rebase strategy was used.
 func MergeAbort(projectPath string) error {

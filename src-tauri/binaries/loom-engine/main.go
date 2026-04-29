@@ -299,6 +299,14 @@ func main() {
 			}
 			emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
 
+			// Check for unmerged (conflict) files and emit if any exist.
+			conflictFiles := git.UnmergedFiles(projectPath)
+			if len(conflictFiles) > 0 {
+				emitter.Emit("git_pull_conflicts", map[string]interface{}{"files": conflictFiles, "branch": branch})
+			} else {
+				emitter.Emit("git_merge_aborted", nil) // clear stale conflict state
+			}
+
 		case "git_checkout":
 			var projectPath, branch string
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
