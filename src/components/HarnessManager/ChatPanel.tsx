@@ -163,6 +163,7 @@ function ChatPanel({
   const [showAddTemplate, setShowAddTemplate] = useState(false)
   const [newTplLabel, setNewTplLabel] = useState('')
   const [newTplPrompt, setNewTplPrompt] = useState('')
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   // Streaming content lives in a ref + mirrored to state for rendering.
   // This avoids the race condition where events arrive before React commits state.
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
@@ -356,21 +357,39 @@ function ChatPanel({
     { id: '_task', label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
     { id: '_test', label: '🧪 Test Cases', prompt: TEST_CASE_PROMPT(projectName) },
   ]
-  const quickActions = [
-    ...defaultActions,
-    ...state.customTemplates.map((t) => ({ id: t.id, label: t.label, prompt: t.prompt })),
-  ]
+  function openAddTemplate() {
+    setEditingTemplateId(null)
+    setNewTplLabel('')
+    setNewTplPrompt('')
+    setShowAddTemplate(true)
+  }
+
+  function openEditTemplate(t: { id: string; label: string; prompt: string }) {
+    setEditingTemplateId(t.id)
+    setNewTplLabel(t.label)
+    setNewTplPrompt(t.prompt)
+    setShowAddTemplate(true)
+  }
+
+  function closeTemplatePopup() {
+    setShowAddTemplate(false)
+    setEditingTemplateId(null)
+    setNewTplLabel('')
+    setNewTplPrompt('')
+  }
 
   async function handleSaveTemplate() {
     if (!newTplLabel.trim() || !newTplPrompt.trim()) return
-    const id = `custom_${Date.now()}`
+    const id = editingTemplateId ?? `custom_${Date.now()}`
     await engineCommand({
       action: 'save_template',
       template: { id, label: newTplLabel.trim(), prompt: newTplPrompt.trim() },
     }).catch(() => {})
-    setShowAddTemplate(false)
-    setNewTplLabel('')
-    setNewTplPrompt('')
+    closeTemplatePopup()
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    await engineCommand({ action: 'delete_template', id }).catch(() => {})
   }
 
   return (
@@ -422,7 +441,9 @@ function ChatPanel({
         <div className={styles.quickActions}>
           {showAddTemplate && (
             <div className={styles.addTemplatePopup}>
-              <div className={styles.addTemplateTitle}>New Template</div>
+              <div className={styles.addTemplateTitle}>
+                {editingTemplateId ? 'Edit Template' : 'New Template'}
+              </div>
               <input
                 className={styles.addTemplateInput}
                 placeholder="Template name…"
@@ -438,14 +459,7 @@ function ChatPanel({
                 rows={5}
               />
               <div className={styles.addTemplateActions}>
-                <button
-                  className={styles.cancelBtn}
-                  onClick={() => {
-                    setShowAddTemplate(false)
-                    setNewTplLabel('')
-                    setNewTplPrompt('')
-                  }}
-                >
+                <button className={styles.cancelBtn} onClick={closeTemplatePopup}>
                   Cancel
                 </button>
                 <button
@@ -453,12 +467,12 @@ function ChatPanel({
                   onClick={handleSaveTemplate}
                   disabled={!newTplLabel.trim() || !newTplPrompt.trim()}
                 >
-                  Save
+                  {editingTemplateId ? 'Update' : 'Save'}
                 </button>
               </div>
             </div>
           )}
-          {quickActions.map((qa) => (
+          {defaultActions.map((qa) => (
             <button
               key={qa.id}
               className={styles.quickBtn}
@@ -468,9 +482,36 @@ function ChatPanel({
               {qa.label}
             </button>
           ))}
+          {state.customTemplates.map((t) => (
+            <div key={t.id} className={styles.customTplChip}>
+              <button
+                className={styles.quickBtn}
+                onClick={() => setInput(t.prompt)}
+                disabled={sending}
+              >
+                {t.label}
+              </button>
+              <div className={styles.chipActions}>
+                <button
+                  className={styles.chipActionBtn}
+                  onClick={() => openEditTemplate(t)}
+                  title="Edit"
+                >
+                  ✏
+                </button>
+                <button
+                  className={styles.chipActionBtn}
+                  onClick={() => handleDeleteTemplate(t.id)}
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
           <button
             className={styles.addTemplateBtn}
-            onClick={() => setShowAddTemplate((v) => !v)}
+            onClick={openAddTemplate}
             title="Add template"
             disabled={sending}
           >

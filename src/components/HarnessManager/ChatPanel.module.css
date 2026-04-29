@@ -491,6 +491,47 @@
   overflow-y: auto;
 }
 
+/* ── Custom template chip ──────────────────────── */
+
+.customTplChip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chipActions {
+  display: none;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 3px;
+  z-index: 10;
+}
+
+.customTplChip:hover .chipActions {
+  display: flex;
+}
+
+.chipActionBtn {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 1px 3px;
+  border-radius: 2px;
+  line-height: 1;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+.chipActionBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
 /* ── Add template button ───────────────────────── */
 
 .addTemplateBtn {
