@@ -36,6 +36,12 @@ export interface Preferences {
   defaultDiffView: 'split' | 'unified'
 }
 
+export interface HarnessTemplate {
+  id: string
+  label: string
+  prompt: string
+}
+
 export const ENGINE_STATUSES = [
   'idle',
   'running',

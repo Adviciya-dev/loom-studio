@@ -21,12 +21,19 @@ type TaskHistory struct {
 	CompletedAt string `json:"completed_at"`
 }
 
+type HarnessTemplate struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
+}
+
 type State struct {
-	Version         int           `json:"version"`
-	Projects        []Project     `json:"projects"`
-	ActiveProjectID string        `json:"active_project_id"`
-	TaskHistory     []TaskHistory `json:"task_history"`
-	Preferences     Preferences   `json:"preferences"`
+	Version         int               `json:"version"`
+	Projects        []Project         `json:"projects"`
+	ActiveProjectID string            `json:"active_project_id"`
+	TaskHistory     []TaskHistory     `json:"task_history"`
+	Preferences     Preferences       `json:"preferences"`
+	Templates       []HarnessTemplate `json:"templates"`
 }
 
 func defaultState() State {
@@ -39,5 +46,6 @@ func defaultState() State {
 			LogAutoscroll:   true,
 			DefaultDiffView: "split",
 		},
+		Templates: []HarnessTemplate{},
 	}
 }

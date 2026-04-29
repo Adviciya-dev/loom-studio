@@ -577,6 +577,33 @@ func main() {
 			}
 			emitter.Emit("gh_pr_list_result", map[string]interface{}{"prs": prs})
 
+		case "get_templates":
+			emitter.Emit("templates", st.Templates())
+
+		case "save_template":
+			var t store.HarnessTemplate
+			if err := json.Unmarshal(cmd["template"], &t); err != nil {
+				emitter.EmitEngineError("save_template: invalid payload")
+				continue
+			}
+			if err := st.SaveTemplate(t); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("save_template: %v", err))
+				continue
+			}
+			emitter.Emit("templates", st.Templates())
+
+		case "delete_template":
+			var id string
+			if err := json.Unmarshal(cmd["id"], &id); err != nil {
+				emitter.EmitEngineError("delete_template: invalid id")
+				continue
+			}
+			if err := st.DeleteTemplate(id); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("delete_template: %v", err))
+				continue
+			}
+			emitter.Emit("templates", st.Templates())
+
 		case "ping":
 			emitter.Emit("pong", nil)
 

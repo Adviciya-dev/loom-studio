@@ -63,6 +63,9 @@ export type EngineCommand =
   | { action: 'ping' }
   | { action: 'save_task_history'; task_id: string; project_id: string; completed_at: string }
   | { action: 'diff_retry' }
+  | { action: 'get_templates' }
+  | { action: 'save_template'; template: { id: string; label: string; prompt: string } }
+  | { action: 'delete_template'; id: string }
 
 export type RawTaskFile = { filename: string; content: string }
 
@@ -83,4 +86,5 @@ export {
   onGitCommitted,
   onGitRemoteInfo,
   onSshUnlocked,
+  onTemplates,
 } from './events'

@@ -134,6 +134,9 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_GH_OPEN_PRS':
       return { ...state, ghOpenPrs: action.prs }
 
+    case 'SET_CUSTOM_TEMPLATES':
+      return { ...state, customTemplates: action.templates }
+
     default:
       return state
   }
