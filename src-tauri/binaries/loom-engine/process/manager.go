@@ -264,20 +264,25 @@ func (m *Manager) runApprovalHandler() {
 }
 
 // buildDiff produces a DiffPayload for a just-written file.
-// Since --dangerously-skip-permissions is used, the file is already on disk —
-// we use `git diff -- <file>` for per-file diffs, falling back to full tree diff.
+// When a specific file path is known, only that file's diff is shown —
+// no fallback to the full tree, which would show previously-approved files.
 func (m *Manager) buildDiff(op PendingOp, projectPath, sessionID string) (diff.DiffPayload, error) {
 	var raw string
 	var err error
 
 	if op.Path != "" {
 		raw, err = diff.ExtractFile(projectPath, op.Path)
-	}
-	if raw == "" || err == diff.ErrNoDiff {
+		// ErrNoDiff for a specific file means it was unchanged or already
+		// captured — let the caller auto-approve rather than showing a stale
+		// full-tree diff.
+		if err != nil {
+			return diff.DiffPayload{}, err
+		}
+	} else {
 		raw, err = diff.Extract(projectPath)
-	}
-	if err != nil {
-		return diff.DiffPayload{}, err
+		if err != nil {
+			return diff.DiffPayload{}, err
+		}
 	}
 	return diff.Parse(raw, sessionID)
 }
