@@ -120,7 +120,12 @@ func (s *Store) AddTaskHistory(th TaskHistory) error {
 }
 
 // Templates returns the current custom harness templates.
-func (s *Store) Templates() []HarnessTemplate { return s.state.Templates }
+func (s *Store) Templates() []HarnessTemplate {
+	if s.state.Templates == nil {
+		return []HarnessTemplate{}
+	}
+	return s.state.Templates
+}
 
 // SaveTemplate upserts a template by ID. If no template with that ID exists it is appended.
 func (s *Store) SaveTemplate(t HarnessTemplate) error {
