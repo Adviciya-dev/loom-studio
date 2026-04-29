@@ -11,6 +11,7 @@ import (
 	"github.com/loom/engine/diff"
 	git "github.com/loom/engine/git"
 	"github.com/loom/engine/ipc"
+	"github.com/loom/engine/task"
 )
 
 type Status string
@@ -165,6 +166,11 @@ func (m *Manager) Start(taskPrompt, projectPath, taskID, taskTitle string) error
 			m.status = StatusCompleted
 			m.approvalCh = nil
 			m.mu.Unlock()
+			if id != "" {
+				if err := task.UpdateTaskStatus(path, id); err != nil {
+					m.emitter.EmitLogLine("warn: could not update task status: " + err.Error())
+				}
+			}
 			hash, commitErr := git.StageAndCommit(path, id, title)
 			if commitErr != nil {
 				if strings.Contains(commitErr.Error(), "nothing to commit") {
@@ -198,6 +204,11 @@ func (m *Manager) Start(taskPrompt, projectPath, taskID, taskTitle string) error
 			return
 		}
 
+		if id != "" {
+			if err := task.UpdateTaskStatus(path, id); err != nil {
+				m.emitter.EmitLogLine("warn: could not update task status: " + err.Error())
+			}
+		}
 		hash, commitErr := git.StageAndCommit(path, id, title)
 		m.mu.Lock()
 		m.status = StatusCompleted

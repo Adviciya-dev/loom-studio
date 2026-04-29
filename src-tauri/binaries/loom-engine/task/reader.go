@@ -192,6 +192,61 @@ func parseTask(content, filename, filePath string) (Task, error) {
 	return t, nil
 }
 
+var reStatusRow = regexp.MustCompile(`(?i)^\|\s*\*\*Status\*\*\s*\|`)
+
+// UpdateTaskStatus finds the task file matching taskID inside
+// projectPath/harness/tasks/ and rewrites the Status cell to "✅ Completed".
+func UpdateTaskStatus(projectPath, taskID string) error {
+	tasksDir := filepath.Join(projectPath, "harness", "tasks")
+
+	var targetPath string
+	_ = filepath.WalkDir(tasksDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".md") || !strings.HasPrefix(name, "TASK-") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		t, err := parseTask(string(data), name, path)
+		if err != nil {
+			return nil
+		}
+		if t.ID == taskID {
+			targetPath = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+
+	if targetPath == "" {
+		return fmt.Errorf("task file for %s not found", taskID)
+	}
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if reStatusRow.MatchString(line) {
+			parts := strings.Split(line, "|")
+			if len(parts) >= 4 {
+				parts[2] = " ✅ Completed "
+				lines[i] = strings.Join(parts, "|")
+			}
+			break
+		}
+	}
+
+	return os.WriteFile(targetPath, []byte(strings.Join(lines, "\n")), 0o644)
+}
+
 // normaliseStatus maps emoji/text status values to canonical Status constants.
 func normaliseStatus(raw string) Status {
 	lower := strings.ToLower(raw)
