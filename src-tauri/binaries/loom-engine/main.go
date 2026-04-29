@@ -299,8 +299,12 @@ func main() {
 			}
 			emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
 
-			// Check for unmerged (conflict) files and emit if any exist.
+			// Check for conflict files — first via unmerged index, then by
+			// scanning for leftover conflict markers in modified files.
 			conflictFiles := git.UnmergedFiles(projectPath)
+			if len(conflictFiles) == 0 {
+				conflictFiles = git.ConflictMarkerFiles(projectPath)
+			}
 			if len(conflictFiles) > 0 {
 				emitter.Emit("git_pull_conflicts", map[string]interface{}{"files": conflictFiles, "branch": branch})
 			} else {

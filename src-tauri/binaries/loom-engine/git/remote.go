@@ -160,6 +160,28 @@ func UnmergedFiles(projectPath string) []string {
 	return files
 }
 
+// ConflictMarkerFiles returns files that contain leftover conflict markers
+// (<<<<<<< / ======= / >>>>>>>) even when no active merge is in progress.
+// Uses `git diff --check` which specifically reports conflict markers.
+func ConflictMarkerFiles(projectPath string) []string {
+	cmd := exec.Command("git", "diff", "--check")
+	cmd.Dir = projectPath
+	out, _ := cmd.CombinedOutput() // non-zero exit when markers found; that's expected
+	seen := map[string]bool{}
+	var files []string
+	for _, line := range strings.Split(string(out), "\n") {
+		// Format: "path/to/file:N: leftover conflict marker"
+		if colon := strings.Index(line, ":"); colon > 0 {
+			path := strings.TrimSpace(line[:colon])
+			if path != "" && !strings.HasPrefix(path, "warning") && !seen[path] {
+				seen[path] = true
+				files = append(files, path)
+			}
+		}
+	}
+	return files
+}
+
 // MergeAbort runs `git merge --abort` to undo a failed merge.
 // Falls back to `git rebase --abort` when a rebase strategy was used.
 func MergeAbort(projectPath string) error {
