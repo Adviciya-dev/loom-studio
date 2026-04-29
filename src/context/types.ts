@@ -26,6 +26,8 @@ export interface AppState {
   gitBranchPushed: boolean | null
   ghOpenPrs: GhPrItem[]
   customTemplates: HarnessTemplate[]
+  gitHasConflicts: boolean
+  gitConflictFiles: string[]
 }
 
 export interface GhPrItem {
@@ -62,6 +64,8 @@ export const initialState: AppState = {
   gitBranchPushed: null,
   ghOpenPrs: [],
   customTemplates: [],
+  gitHasConflicts: false,
+  gitConflictFiles: [],
 }
 
 export type AppAction =
@@ -96,3 +100,5 @@ export type AppAction =
   | { type: 'SET_GIT_BRANCH_PUSHED'; pushed: boolean }
   | { type: 'SET_GH_OPEN_PRS'; prs: GhPrItem[] }
   | { type: 'SET_CUSTOM_TEMPLATES'; templates: HarnessTemplate[] }
+  | { type: 'SET_GIT_CONFLICTS'; files: string[] }
+  | { type: 'CLEAR_GIT_CONFLICTS' }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import styles from './LogPanel.module.css'
 
@@ -174,6 +175,7 @@ function ThinkingIndicator() {
 
 function LogPanel() {
   const { state, dispatch } = useApp()
+  const { gitHasConflicts } = state
   const { logLines, engineStatus } = state
   const bodyRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -237,6 +239,17 @@ function LogPanel() {
     <div className={styles.logPanel}>
       <div className={styles.header}>
         <span className={styles.title}>Output</span>
+        {gitHasConflicts && (
+          <button
+            className={styles.conflictBtn}
+            onClick={() =>
+              invoke('open_in_editor', { path: state.activeProject?.path ?? '' }).catch(() => {})
+            }
+            title="Merge conflicts detected — open in editor to resolve"
+          >
+            ⚠ Conflicts
+          </button>
+        )}
         {isRunning && <span className={styles.liveDot} aria-label="running" />}
         {logLines.length > 0 && (
           <span className={styles.lineCount}>{logLines.length.toLocaleString()} lines</span>

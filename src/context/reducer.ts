@@ -143,6 +143,12 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_CUSTOM_TEMPLATES':
       return { ...state, customTemplates: action.templates ?? [] }
 
+    case 'SET_GIT_CONFLICTS':
+      return { ...state, gitHasConflicts: true, gitConflictFiles: action.files }
+
+    case 'CLEAR_GIT_CONFLICTS':
+      return { ...state, gitHasConflicts: false, gitConflictFiles: [] }
+
     default:
       return state
   }

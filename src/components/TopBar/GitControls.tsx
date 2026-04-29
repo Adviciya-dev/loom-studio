@@ -6,9 +6,18 @@ import { onGitPullDiverged, onGitPullConflicts, onGitMergeAborted } from '@/lib/
 import styles from './GitControls.module.css'
 
 function GitControls() {
-  const { state } = useApp()
-  const { activeProject, gitBranch, gitBranches, gitRemoteUrl, gitAhead, gitBehind, gitSshError } =
-    state
+  const { state, dispatch } = useApp()
+  const {
+    activeProject,
+    gitBranch,
+    gitBranches,
+    gitRemoteUrl,
+    gitAhead,
+    gitBehind,
+    gitSshError,
+    gitHasConflicts,
+    gitConflictFiles,
+  } = state
   const [open, setOpen] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
@@ -21,8 +30,6 @@ function GitControls() {
   const [showPullPicker, setShowPullPicker] = useState(false)
   const [pullBranch, setPullBranch] = useState('')
   const [pullDiverged, setPullDiverged] = useState(false)
-  const [hasConflicts, setHasConflicts] = useState(false)
-  const [conflictFiles, setConflictFiles] = useState<string[]>([])
   const [abortingMerge, setAbortingMerge] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [unlocking, setUnlocking] = useState(false)
@@ -83,16 +90,14 @@ function GitControls() {
     let c1: (() => void) | null = null
     let c2: (() => void) | null = null
     onGitPullConflicts((files) => {
-      setConflictFiles(files)
-      setHasConflicts(true)
+      dispatch({ type: 'SET_GIT_CONFLICTS', files })
       setPulling(false)
       setOpen(true)
     }).then((fn) => {
       c1 = fn
     })
     onGitMergeAborted(() => {
-      setHasConflicts(false)
-      setConflictFiles([])
+      dispatch({ type: 'CLEAR_GIT_CONFLICTS' })
       setAbortingMerge(false)
     }).then((fn) => {
       c2 = fn
@@ -143,8 +148,7 @@ function GitControls() {
     if (!activeProject || !pullBranch) return
     setShowPullPicker(false)
     setPullDiverged(false)
-    setHasConflicts(false)
-    setConflictFiles([])
+    dispatch({ type: 'CLEAR_GIT_CONFLICTS' })
     setPulling(true)
     await engineCommand({
       action: 'git_pull',
@@ -224,15 +228,15 @@ function GitControls() {
       {open && (
         <div className={styles.dropdown}>
           {/* Conflict panel — shown at top so it's always visible */}
-          {hasConflicts && !remoteOpsDisabled && (
+          {gitHasConflicts && !remoteOpsDisabled && (
             <div className={styles.conflictPanel}>
               <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
               <p className={styles.conflictHint}>
                 Resolve conflicts in your editor, then commit. Or abort to undo the merge.
               </p>
-              {conflictFiles.length > 0 && (
+              {gitConflictFiles.length > 0 && (
                 <div className={styles.conflictFiles}>
-                  {conflictFiles.map((f) => (
+                  {gitConflictFiles.map((f) => (
                     <div key={f} className={styles.conflictFile}>
                       <span className={styles.conflictFileDot}>●</span>
                       <span className={styles.conflictFilePath}>{f}</span>
