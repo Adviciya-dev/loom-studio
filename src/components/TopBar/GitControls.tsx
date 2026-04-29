@@ -21,6 +21,7 @@ function GitControls() {
   const [showPullPicker, setShowPullPicker] = useState(false)
   const [pullBranch, setPullBranch] = useState('')
   const [pullDiverged, setPullDiverged] = useState(false)
+  const [hasConflicts, setHasConflicts] = useState(false)
   const [conflictFiles, setConflictFiles] = useState<string[]>([])
   const [abortingMerge, setAbortingMerge] = useState(false)
   const [passphrase, setPassphrase] = useState('')
@@ -83,12 +84,14 @@ function GitControls() {
     let c2: (() => void) | null = null
     onGitPullConflicts((files) => {
       setConflictFiles(files)
+      setHasConflicts(true)
       setPulling(false)
       setOpen(true)
     }).then((fn) => {
       c1 = fn
     })
     onGitMergeAborted(() => {
+      setHasConflicts(false)
       setConflictFiles([])
       setAbortingMerge(false)
     }).then((fn) => {
@@ -140,6 +143,8 @@ function GitControls() {
     if (!activeProject || !pullBranch) return
     setShowPullPicker(false)
     setPullDiverged(false)
+    setHasConflicts(false)
+    setConflictFiles([])
     setPulling(true)
     await engineCommand({
       action: 'git_pull',
@@ -313,7 +318,7 @@ function GitControls() {
                     </button>
                   </div>
                 )}
-                {conflictFiles.length > 0 && !remoteOpsDisabled && (
+                {hasConflicts && !remoteOpsDisabled && (
                   <div className={styles.conflictPanel}>
                     <div className={styles.conflictTitle}>⚠ Merge conflicts</div>
                     <p className={styles.conflictHint}>
