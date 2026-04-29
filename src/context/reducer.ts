@@ -5,6 +5,12 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_PROJECTS':
       return { ...state, projects: action.projects }
 
+    case 'REMOVE_PROJECT': {
+      const projects = state.projects.filter((p) => p.id !== action.id)
+      const activeProject = state.activeProject?.id === action.id ? null : state.activeProject
+      return { ...state, projects, activeProject }
+    }
+
     case 'SET_ACTIVE_PROJECT':
       return {
         ...state,
@@ -133,6 +139,9 @@ export function reducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_GH_OPEN_PRS':
       return { ...state, ghOpenPrs: action.prs }
+
+    case 'SET_CUSTOM_TEMPLATES':
+      return { ...state, customTemplates: action.templates ?? [] }
 
     default:
       return state

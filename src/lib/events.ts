@@ -1,5 +1,13 @@
 import { listen } from '@tauri-apps/api/event'
-import type { LogLine, DiffPayload, Task, Project, Preferences, EngineStatus } from '@/types'
+import type {
+  LogLine,
+  DiffPayload,
+  Task,
+  Project,
+  Preferences,
+  EngineStatus,
+  HarnessTemplate,
+} from '@/types'
 
 // ─── Payload types ────────────────────────────────────────────────────────────
 
@@ -98,3 +106,9 @@ export interface GhPrPayload {
 
 export const onGhPrListResult = (cb: (prs: GhPrPayload[]) => void) =>
   listen<{ prs: GhPrPayload[] }>('gh_pr_list_result', (e) => cb(e.payload.prs))
+
+export const onGitPullDiverged = (cb: (branch: string) => void) =>
+  listen<{ branch: string }>('git_pull_diverged', (e) => cb(e.payload.branch))
+
+export const onTemplates = (cb: (templates: HarnessTemplate[]) => void) =>
+  listen<HarnessTemplate[]>('templates', (e) => cb(e.payload))

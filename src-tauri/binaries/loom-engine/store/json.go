@@ -98,6 +98,21 @@ func (s *Store) SaveProject(p Project) error {
 	return s.Save()
 }
 
+// RemoveProject deletes a project by ID and persists.
+func (s *Store) RemoveProject(id string) error {
+	next := make([]Project, 0, len(s.state.Projects))
+	for _, p := range s.state.Projects {
+		if p.ID != id {
+			next = append(next, p)
+		}
+	}
+	s.state.Projects = next
+	if s.state.ActiveProjectID == id {
+		s.state.ActiveProjectID = ""
+	}
+	return s.Save()
+}
+
 // SetActiveProject updates the active project ID and persists.
 func (s *Store) SetActiveProject(id string) error {
 	s.state.ActiveProjectID = id
@@ -116,5 +131,37 @@ func (s *Store) SavePreferences(prefs Preferences) error {
 // AddTaskHistory appends a task history entry and persists.
 func (s *Store) AddTaskHistory(th TaskHistory) error {
 	s.state.TaskHistory = append(s.state.TaskHistory, th)
+	return s.Save()
+}
+
+// Templates returns the current custom harness templates.
+func (s *Store) Templates() []HarnessTemplate {
+	if s.state.Templates == nil {
+		return []HarnessTemplate{}
+	}
+	return s.state.Templates
+}
+
+// SaveTemplate upserts a template by ID. If no template with that ID exists it is appended.
+func (s *Store) SaveTemplate(t HarnessTemplate) error {
+	for i, existing := range s.state.Templates {
+		if existing.ID == t.ID {
+			s.state.Templates[i] = t
+			return s.Save()
+		}
+	}
+	s.state.Templates = append(s.state.Templates, t)
+	return s.Save()
+}
+
+// DeleteTemplate removes a template by ID and persists.
+func (s *Store) DeleteTemplate(id string) error {
+	next := make([]HarnessTemplate, 0, len(s.state.Templates))
+	for _, t := range s.state.Templates {
+		if t.ID != id {
+			next = append(next, t)
+		}
+	}
+	s.state.Templates = next
 	return s.Save()
 }

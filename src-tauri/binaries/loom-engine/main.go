@@ -93,6 +93,18 @@ func main() {
 			}
 			emitter.Emit("projects", st.Projects())
 
+		case "remove_project":
+			var id string
+			if err := json.Unmarshal(cmd["id"], &id); err != nil {
+				emitter.EmitEngineError("remove_project: invalid id")
+				continue
+			}
+			if err := st.RemoveProject(id); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("remove_project: %v", err))
+				continue
+			}
+			emitter.Emit("projects", st.Projects())
+
 		case "set_active_project":
 			var id string
 			if err := json.Unmarshal(cmd["id"], &id); err != nil {
@@ -168,6 +180,18 @@ func main() {
 				branch, _ := git.GetCurrentBranch(projectPath)
 				branches, _ := git.ListBranches(projectPath)
 				emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
+
+				// Mark the task as in-progress in the file and append a completion
+				// instruction to the prompt so Claude updates it when done.
+				if relPath, err := task.MarkTaskStarted(projectPath, taskID); err == nil {
+					prompt += "\n\n---\n" +
+						"When you have finished implementing everything above, update the task file at `" + relPath + "`:\n" +
+						"- Set the **Status** field to `✅ Completed`\n" +
+						"- Set the **Completed** date field to today's date (YYYY-MM-DD format)\n" +
+						"Make this the very last thing you do."
+				} else {
+					emitter.EmitLogLine("warn: could not mark task started: " + err.Error())
+				}
 			}
 
 			if err := manager.Start(prompt, projectPath, taskID, taskTitle); err != nil {
@@ -369,7 +393,7 @@ func main() {
 			})
 
 		case "git_pull":
-			var projectPath, branch string
+			var projectPath, branch, strategy string
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
 				emitter.EmitEngineError("git_pull: missing project_path")
 				continue
@@ -378,9 +402,16 @@ func main() {
 				emitter.EmitEngineError("git_pull: missing branch")
 				continue
 			}
+			if raw, ok := cmd["strategy"]; ok {
+				json.Unmarshal(raw, &strategy) //nolint:errcheck
+			}
 			emitter.EmitLogLine("Pulling from origin/" + branch + "…")
-			if err := git.Pull(projectPath, branch); err != nil {
-				emitter.EmitEngineError(fmt.Sprintf("Pull failed: %v", err))
+			if err := git.Pull(projectPath, branch, strategy); err != nil {
+				if err == git.ErrDivergentBranches {
+					emitter.Emit("git_pull_diverged", map[string]string{"branch": branch, "project_path": projectPath})
+				} else {
+					emitter.EmitEngineError(fmt.Sprintf("Pull failed: %v", err))
+				}
 				continue
 			}
 			emitter.EmitLogLine("✓ Pulled from origin/" + branch)
@@ -576,6 +607,33 @@ func main() {
 				prs = []json.RawMessage{}
 			}
 			emitter.Emit("gh_pr_list_result", map[string]interface{}{"prs": prs})
+
+		case "get_templates":
+			emitter.Emit("templates", st.Templates())
+
+		case "save_template":
+			var t store.HarnessTemplate
+			if err := json.Unmarshal(cmd["template"], &t); err != nil {
+				emitter.EmitEngineError("save_template: invalid payload")
+				continue
+			}
+			if err := st.SaveTemplate(t); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("save_template: %v", err))
+				continue
+			}
+			emitter.Emit("templates", st.Templates())
+
+		case "delete_template":
+			var id string
+			if err := json.Unmarshal(cmd["id"], &id); err != nil {
+				emitter.EmitEngineError("delete_template: invalid id")
+				continue
+			}
+			if err := st.DeleteTemplate(id); err != nil {
+				emitter.EmitEngineError(fmt.Sprintf("delete_template: %v", err))
+				continue
+			}
+			emitter.Emit("templates", st.Templates())
 
 		case "ping":
 			emitter.Emit("pong", nil)

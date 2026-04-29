@@ -40,6 +40,16 @@ export default function ProjectSelector() {
     const path = await openFolderPicker()
     if (!path) return
 
+    // If this path is already a known project, just switch to it.
+    const existing = state.projects.find((p) => p.path === path)
+    if (existing) {
+      await engineCommand({ action: 'set_active_project', id: existing.id })
+      dispatch({ type: 'SET_ACTIVE_PROJECT', project: existing })
+      const tasks = await readHarnessTasks(path)
+      dispatch({ type: 'SET_HARNESS_EMPTY', empty: tasks.length === 0 })
+      return
+    }
+
     const project: Project = {
       id: `proj_${Date.now().toString(36)}`,
       name: projectNameFromPath(path),
@@ -53,6 +63,11 @@ export default function ProjectSelector() {
 
     const tasks = await readHarnessTasks(path)
     dispatch({ type: 'SET_HARNESS_EMPTY', empty: tasks.length === 0 })
+  }
+
+  async function handleRemoveProject(id: string) {
+    await engineCommand({ action: 'remove_project', id }).catch(() => {})
+    dispatch({ type: 'REMOVE_PROJECT', id })
   }
 
   async function handleSelectProject(project: Project) {
@@ -89,6 +104,7 @@ export default function ProjectSelector() {
           activeProjectId={activeProject?.id ?? null}
           onSelect={handleSelectProject}
           onAdd={handleAddProject}
+          onRemove={handleRemoveProject}
         />
       )}
     </div>

@@ -31,10 +31,16 @@ func Extract(projectPath string) (string, error) {
 	return raw, nil
 }
 
-// ExtractFile runs `git diff -- <filePath>` and returns the diff for that file only.
-// Returns ErrNoDiff when the file has no unstaged changes.
+// ExtractFile returns the diff for a single file relative to HEAD.
+// It stages the file first so newly created files are captured.
+// Returns ErrNoDiff when the file has no changes relative to HEAD.
 func ExtractFile(projectPath, filePath string) (string, error) {
-	cmd := exec.Command("git", "diff", "--", filePath)
+	// Stage the specific file so new/untracked files show in the diff.
+	stageCmd := exec.Command("git", "add", "--", filePath)
+	stageCmd.Dir = projectPath
+	_ = stageCmd.Run()
+
+	cmd := exec.Command("git", "diff", "HEAD", "--", filePath)
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { onHarnessLogLine, onHarnessDone, onEngineError } from '@/lib/events'
+import { onHarnessLogLine, onHarnessDone, onEngineError, onTemplates } from '@/lib/events'
+import { engineCommand } from '@/lib/ipc'
+import { useApp } from '@/context/AppContext'
 import {
   PRD_PROMPT,
   ARCHITECTURE_PROMPT,
@@ -51,6 +53,45 @@ interface Props {
 
 function ts() {
   return new Date().toLocaleTimeString('en', { hour12: false })
+}
+
+function ThinkingBubble({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Show last meaningful line as a live status hint.
+  const lines = content.split('\n').filter((l) => l.trim())
+  const last = lines[lines.length - 1] ?? 'Working…'
+  const status = last.length > 72 ? last.slice(0, 72) + '…' : last
+
+  return (
+    <div className={styles.thinkingMsg}>
+      <div className={styles.thinkingBubble}>
+        <div className={styles.thinkingHeader}>
+          <div className={styles.thinkingLeft}>
+            <span className={styles.thinkingDots}>
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className={styles.thinkingStatus}>{status}</span>
+          </div>
+          <button
+            className={styles.expandBtn}
+            onClick={() => setExpanded((e) => !e)}
+            title={expanded ? 'Collapse' : 'Show details'}
+          >
+            {expanded ? '▲' : '▼'}
+          </button>
+        </div>
+        {expanded && (
+          <div className={styles.thinkingContent}>
+            {content}
+            <span className={styles.cursor} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function AssistantBubble({
@@ -114,10 +155,15 @@ function ChatPanel({
   pendingAttach,
   onAttachConsumed,
 }: Props) {
+  const { state, dispatch } = useApp()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [model, setModel] = useState('claude-sonnet-4-6')
+  const [showAddTemplate, setShowAddTemplate] = useState(false)
+  const [newTplLabel, setNewTplLabel] = useState('')
+  const [newTplPrompt, setNewTplPrompt] = useState('')
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   // Streaming content lives in a ref + mirrored to state for rendering.
   // This avoids the race condition where events arrive before React commits state.
   const [streamingContent, setStreamingContent] = useState<string | null>(null)
@@ -146,7 +192,13 @@ function ChatPanel({
     let cancelled = false
     let cleanupFns: Array<() => void> = []
 
+    engineCommand({ action: 'get_templates' }).catch(() => {})
+
     Promise.all([
+      onTemplates((templates) => {
+        dispatch({ type: 'SET_CUSTOM_TEMPLATES', templates })
+      }),
+
       onHarnessLogLine((line) => {
         streamRef.current = streamRef.current
           ? streamRef.current + '\n' + line.content
@@ -224,7 +276,7 @@ function ChatPanel({
         flushTimerRef.current = null
       }
     }
-  }, [])
+  }, [dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Consume file path attached from the FileModal.
   useEffect(() => {
@@ -298,13 +350,47 @@ function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 220) + 'px'
   }
 
-  const quickActions = [
-    { label: '📋 PRD', prompt: PRD_PROMPT(projectName) },
-    { label: '🏗 Architecture', prompt: ARCHITECTURE_PROMPT(projectName) },
-    { label: '✨ Feature Brief', prompt: FEATURE_PROMPT(projectName) },
-    { label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
-    { label: '🧪 Test Cases', prompt: TEST_CASE_PROMPT(projectName) },
+  const defaultActions = [
+    { id: '_prd', label: '📋 PRD', prompt: PRD_PROMPT(projectName) },
+    { id: '_arch', label: '🏗 Architecture', prompt: ARCHITECTURE_PROMPT(projectName) },
+    { id: '_feature', label: '✨ Feature Brief', prompt: FEATURE_PROMPT(projectName) },
+    { id: '_task', label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
+    { id: '_test', label: '🧪 Test Cases', prompt: TEST_CASE_PROMPT(projectName) },
   ]
+  function openAddTemplate() {
+    setEditingTemplateId(null)
+    setNewTplLabel('')
+    setNewTplPrompt('')
+    setShowAddTemplate(true)
+  }
+
+  function openEditTemplate(t: { id: string; label: string; prompt: string }) {
+    setEditingTemplateId(t.id)
+    setNewTplLabel(t.label)
+    setNewTplPrompt(t.prompt)
+    setShowAddTemplate(true)
+  }
+
+  function closeTemplatePopup() {
+    setShowAddTemplate(false)
+    setEditingTemplateId(null)
+    setNewTplLabel('')
+    setNewTplPrompt('')
+  }
+
+  async function handleSaveTemplate() {
+    if (!newTplLabel.trim() || !newTplPrompt.trim()) return
+    const id = editingTemplateId ?? `custom_${Date.now()}`
+    await engineCommand({
+      action: 'save_template',
+      template: { id, label: newTplLabel.trim(), prompt: newTplPrompt.trim() },
+    }).catch(() => {})
+    closeTemplatePopup()
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    await engineCommand({ action: 'delete_template', id }).catch(() => {})
+  }
 
   return (
     <>
@@ -349,15 +435,46 @@ function ChatPanel({
               />
             )
           )}
-          {streamingContent !== null && (
-            <AssistantBubble content={streamingContent} timestamp={ts()} streaming />
-          )}
+          {streamingContent !== null && <ThinkingBubble content={streamingContent} />}
         </div>
 
         <div className={styles.quickActions}>
-          {quickActions.map((qa) => (
+          {showAddTemplate && (
+            <div className={styles.addTemplatePopup}>
+              <div className={styles.addTemplateTitle}>
+                {editingTemplateId ? 'Edit Template' : 'New Template'}
+              </div>
+              <input
+                className={styles.addTemplateInput}
+                placeholder="Template name…"
+                value={newTplLabel}
+                onChange={(e) => setNewTplLabel(e.target.value)}
+                autoFocus
+              />
+              <textarea
+                className={styles.addTemplateTextarea}
+                placeholder="Prompt text…"
+                value={newTplPrompt}
+                onChange={(e) => setNewTplPrompt(e.target.value)}
+                rows={5}
+              />
+              <div className={styles.addTemplateActions}>
+                <button className={styles.cancelBtn} onClick={closeTemplatePopup}>
+                  Cancel
+                </button>
+                <button
+                  className={styles.saveTemplateBtn}
+                  onClick={handleSaveTemplate}
+                  disabled={!newTplLabel.trim() || !newTplPrompt.trim()}
+                >
+                  {editingTemplateId ? 'Update' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+          {defaultActions.map((qa) => (
             <button
-              key={qa.label}
+              key={qa.id}
               className={styles.quickBtn}
               onClick={() => setInput(qa.prompt)}
               disabled={sending}
@@ -365,6 +482,41 @@ function ChatPanel({
               {qa.label}
             </button>
           ))}
+          {state.customTemplates.map((t) => (
+            <div key={t.id} className={styles.customTplChip}>
+              <button
+                className={styles.quickBtn}
+                onClick={() => setInput(t.prompt)}
+                disabled={sending}
+              >
+                {t.label}
+              </button>
+              <div className={styles.chipActions}>
+                <button
+                  className={styles.chipActionBtn}
+                  onClick={() => openEditTemplate(t)}
+                  title="Edit"
+                >
+                  ✏
+                </button>
+                <button
+                  className={styles.chipActionBtn}
+                  onClick={() => handleDeleteTemplate(t.id)}
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            className={styles.addTemplateBtn}
+            onClick={openAddTemplate}
+            title="Add template"
+            disabled={sending}
+          >
+            +
+          </button>
         </div>
 
         <div className={styles.inputBar}>

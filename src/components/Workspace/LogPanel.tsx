@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import styles from './LogPanel.module.css'
 
@@ -175,6 +176,29 @@ function ThinkingIndicator() {
 function LogPanel() {
   const { state, dispatch } = useApp()
   const { logLines, engineStatus } = state
+
+  // Detect merge conflict markers from prettier errors in the log
+  const conflictFiles = useMemo(() => {
+    const hasPrettierConflict = logLines.some(
+      (l) =>
+        l.content.includes('prettier --write') &&
+        (l.content.includes('FAILED') || l.content.includes('[FAILED]'))
+    )
+    if (!hasPrettierConflict) return []
+    const files: string[] = []
+    const seen = new Set<string>()
+    for (const line of logLines) {
+      const match = line.content.match(/\[error\]\s+(.+?):\s+SyntaxError:\s+Merge conflict marker/)
+      if (match) {
+        const file = match[1].trim()
+        if (!seen.has(file)) {
+          seen.add(file)
+          files.push(file)
+        }
+      }
+    }
+    return files
+  }, [logLines])
   const bodyRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const [scrollTop, setScrollTop] = useState(0)
@@ -237,6 +261,17 @@ function LogPanel() {
     <div className={styles.logPanel}>
       <div className={styles.header}>
         <span className={styles.title}>Output</span>
+        {conflictFiles.length > 0 && (
+          <button
+            className={styles.conflictBtn}
+            onClick={() =>
+              invoke('open_in_editor', { path: state.activeProject?.path ?? '' }).catch(() => {})
+            }
+            title={`${conflictFiles.length} file(s) have merge conflicts — open in editor to resolve`}
+          >
+            ⚠ {conflictFiles.length} conflict{conflictFiles.length > 1 ? 's' : ''}
+          </button>
+        )}
         {isRunning && <span className={styles.liveDot} aria-label="running" />}
         {logLines.length > 0 && (
           <span className={styles.lineCount}>{logLines.length.toLocaleString()} lines</span>

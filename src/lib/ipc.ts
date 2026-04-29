@@ -22,6 +22,7 @@ export const engineCommand = (payload: EngineCommand): Promise<void> =>
 export type EngineCommand =
   | { action: 'get_projects' }
   | { action: 'save_project'; project: Project }
+  | { action: 'remove_project'; id: string }
   | { action: 'set_active_project'; id: string }
   | { action: 'get_preferences' }
   | { action: 'save_preferences'; preferences: Preferences }
@@ -55,7 +56,12 @@ export type EngineCommand =
     }
   | { action: 'gh_pr_list'; project_path: string }
   | { action: 'git_fetch'; project_path: string; branch: string }
-  | { action: 'git_pull'; project_path: string; branch: string }
+  | {
+      action: 'git_pull'
+      project_path: string
+      branch: string
+      strategy?: 'merge' | 'rebase' | 'ff-only'
+    }
   | { action: 'git_push'; project_path: string; branch: string }
   | { action: 'git_checkout'; branch: string; project_path: string }
   | { action: 'git_create_branch'; branch: string; project_path: string }
@@ -63,6 +69,9 @@ export type EngineCommand =
   | { action: 'ping' }
   | { action: 'save_task_history'; task_id: string; project_id: string; completed_at: string }
   | { action: 'diff_retry' }
+  | { action: 'get_templates' }
+  | { action: 'save_template'; template: { id: string; label: string; prompt: string } }
+  | { action: 'delete_template'; id: string }
 
 export type RawTaskFile = { filename: string; content: string }
 
@@ -83,4 +92,5 @@ export {
   onGitCommitted,
   onGitRemoteInfo,
   onSshUnlocked,
+  onTemplates,
 } from './events'

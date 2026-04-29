@@ -1,4 +1,4 @@
-import type { Project, Task, EngineStatus, LogLine, DiffPayload } from '@/types'
+import type { Project, Task, EngineStatus, LogLine, DiffPayload, HarnessTemplate } from '@/types'
 
 export interface AppState {
   projects: Project[]
@@ -25,6 +25,7 @@ export interface AppState {
   gitCommitsOnBranch: string[]
   gitBranchPushed: boolean | null
   ghOpenPrs: GhPrItem[]
+  customTemplates: HarnessTemplate[]
 }
 
 export interface GhPrItem {
@@ -60,10 +61,12 @@ export const initialState: AppState = {
   gitCommitsOnBranch: [],
   gitBranchPushed: null,
   ghOpenPrs: [],
+  customTemplates: [],
 }
 
 export type AppAction =
   | { type: 'SET_PROJECTS'; projects: Project[] }
+  | { type: 'REMOVE_PROJECT'; id: string }
   | { type: 'SET_ACTIVE_PROJECT'; project: Project | null }
   | { type: 'SET_HARNESS_EMPTY'; empty: boolean }
   | { type: 'ADD_TASK'; task: Task }
@@ -92,3 +95,4 @@ export type AppAction =
   | { type: 'SET_GIT_COMMITS_ON_BRANCH'; commits: string[] }
   | { type: 'SET_GIT_BRANCH_PUSHED'; pushed: boolean }
   | { type: 'SET_GH_OPEN_PRS'; prs: GhPrItem[] }
+  | { type: 'SET_CUSTOM_TEMPLATES'; templates: HarnessTemplate[] }

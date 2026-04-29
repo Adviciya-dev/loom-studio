@@ -56,11 +56,30 @@ func Fetch(projectPath string) error {
 	return nil
 }
 
-// Pull runs `git pull origin <branch>`.
-func Pull(projectPath, branch string) error {
-	out, err := gitCmd(projectPath, "pull", "origin", branch).CombinedOutput()
+// ErrDivergentBranches is returned when git pull detects divergent histories
+// and no reconcile strategy has been configured.
+var ErrDivergentBranches = fmt.Errorf("divergent_branches")
+
+// Pull runs `git pull origin <branch>`. strategy may be "merge", "rebase",
+// "ff-only", or "" (let git use its default, which may error on divergence).
+func Pull(projectPath, branch, strategy string) error {
+	args := []string{"pull"}
+	switch strategy {
+	case "merge":
+		args = append(args, "--no-rebase")
+	case "rebase":
+		args = append(args, "--rebase")
+	case "ff-only":
+		args = append(args, "--ff-only")
+	}
+	args = append(args, "origin", branch)
+	out, err := gitCmd(projectPath, args...).CombinedOutput()
+	msg := strings.TrimSpace(string(out))
 	if err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		if strings.Contains(msg, "divergent") || strings.Contains(msg, "reconcile") {
+			return ErrDivergentBranches
+		}
+		return fmt.Errorf("%s", msg)
 	}
 	return nil
 }
