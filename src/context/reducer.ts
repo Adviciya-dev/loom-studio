@@ -143,6 +143,24 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_CUSTOM_TEMPLATES':
       return { ...state, customTemplates: action.templates ?? [] }
 
+    case 'SET_TEST_CASES':
+      return { ...state, testCases: action.cases }
+
+    case 'SET_TEST_STATUS':
+      return {
+        ...state,
+        testStatuses: { ...state.testStatuses, [action.testId]: action.status },
+      }
+
+    case 'SET_TEST_RUN_RESULT':
+      return { ...state, testRunResult: action.result, isRunningTests: false }
+
+    case 'SET_IS_RUNNING_TESTS':
+      return { ...state, isRunningTests: action.value }
+
+    case 'CLEAR_TEST_RESULTS':
+      return { ...state, testStatuses: {}, testRunResult: null, isRunningTests: false }
+
     default:
       return state
   }

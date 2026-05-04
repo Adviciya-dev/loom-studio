@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/loom/engine/diff"
 	git "github.com/loom/engine/git"
@@ -635,6 +637,30 @@ func main() {
 			}
 			emitter.Emit("templates", st.Templates())
 
+		case "run_test_case":
+			var projectPath, testID string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("run_test_case: missing project_path")
+				continue
+			}
+			if err := json.Unmarshal(cmd["test_id"], &testID); err != nil || testID == "" {
+				emitter.EmitEngineError("run_test_case: missing test_id")
+				continue
+			}
+			go runTestCase(emitter, projectPath, testID)
+
+		case "run_all_test_cases":
+			var projectPath string
+			var testIDs []string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("run_all_test_cases: missing project_path")
+				continue
+			}
+			if raw, ok := cmd["test_ids"]; ok {
+				json.Unmarshal(raw, &testIDs) //nolint:errcheck
+			}
+			go runAllTestCases(emitter, projectPath, testIDs)
+
 		case "ping":
 			emitter.Emit("pong", nil)
 
@@ -642,6 +668,135 @@ func main() {
 			fmt.Fprintf(os.Stderr, "engine: unknown action: %s\n", action)
 		}
 	}
+}
+
+func npxBin() string {
+	if runtime.GOOS == "windows" {
+		return "npx.cmd"
+	}
+	return "npx"
+}
+
+func runTestCase(emitter *ipc.Emitter, projectPath, testID string) {
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
+	start := time.Now()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	npx := npxBin()
+	c := exec.CommandContext(ctx, npx, "playwright", "test", "--grep", testID, "--reporter=line")
+	c.Dir = projectPath
+	c.Env = append(os.Environ(), "CI=true")
+	out, err := c.CombinedOutput()
+	duration := fmt.Sprintf("%.1fs", time.Since(start).Seconds())
+
+	if ctx.Err() != nil {
+		emitter.Emit("test_status", map[string]interface{}{
+			"test_id": testID, "status": "failed",
+			"duration": duration, "error": "Timed out after 30s",
+		})
+		return
+	}
+
+	if err != nil {
+		errMsg := strings.TrimSpace(string(out))
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		if len(errMsg) > 300 {
+			errMsg = errMsg[:300] + "…"
+		}
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "No such file") {
+			emitter.EmitEngineError("missing_dep:playwright:Playwright not found. Run: npx playwright install")
+		}
+		emitter.Emit("test_status", map[string]interface{}{
+			"test_id": testID, "status": "failed",
+			"duration": duration, "error": errMsg,
+		})
+		return
+	}
+	emitter.Emit("test_status", map[string]interface{}{
+		"test_id": testID, "status": "passed", "duration": duration,
+	})
+}
+
+func runAllTestCases(emitter *ipc.Emitter, projectPath string, testIDs []string) {
+	total := len(testIDs)
+	emitter.Emit("test_run_started", map[string]interface{}{"total": total})
+	start := time.Now()
+
+	passed := 0
+	failed := 0
+	var failedTests []map[string]string
+
+	for _, id := range testIDs {
+		emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "running"})
+		tStart := time.Now()
+
+		tCtx, tCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		npx := npxBin()
+		c := exec.CommandContext(tCtx, npx, "playwright", "test", "--grep", id, "--reporter=line")
+		c.Dir = projectPath
+		c.Env = append(os.Environ(), "CI=true")
+		out, err := c.CombinedOutput()
+		dur := fmt.Sprintf("%.1fs", time.Since(tStart).Seconds())
+		timedOut := tCtx.Err() != nil
+		tCancel()
+
+		if timedOut {
+			failed++
+			emitter.Emit("test_status", map[string]interface{}{
+				"test_id": id, "status": "failed", "duration": dur, "error": "Timed out after 30s",
+			})
+			failedTests = append(failedTests, map[string]string{"id": id, "error": "Timed out after 30s"})
+			continue
+		}
+
+		if err != nil {
+			failed++
+			errMsg := strings.TrimSpace(string(out))
+			if errMsg == "" {
+				errMsg = err.Error()
+			}
+			if len(errMsg) > 300 {
+				errMsg = errMsg[:300] + "…"
+			}
+			if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "No such file") {
+				emitter.EmitEngineError("missing_dep:playwright:Playwright not found. Run: npx playwright install")
+				emitter.Emit("test_status", map[string]interface{}{
+					"test_id": id, "status": "failed", "duration": dur, "error": errMsg,
+				})
+				failedTests = append(failedTests, map[string]string{"id": id, "error": errMsg})
+				break
+			}
+			emitter.Emit("test_status", map[string]interface{}{
+				"test_id": id, "status": "failed", "duration": dur, "error": errMsg,
+			})
+			failedTests = append(failedTests, map[string]string{"id": id, "error": errMsg})
+		} else {
+			passed++
+			emitter.Emit("test_status", map[string]interface{}{
+				"test_id": id, "status": "passed", "duration": dur,
+			})
+		}
+	}
+
+	if failedTests == nil {
+		failedTests = []map[string]string{}
+	}
+	passRate := 0
+	if total > 0 {
+		passRate = (passed * 100) / total
+	}
+	emitter.Emit("test_run_complete", map[string]interface{}{
+		"total":        total,
+		"passed":       passed,
+		"failed":       failed,
+		"duration":     fmt.Sprintf("%.1fs", time.Since(start).Seconds()),
+		"pass_rate":    passRate,
+		"failed_tests": failedTests,
+	})
 }
 
 // chatMu ensures only one harness chat runs at a time.

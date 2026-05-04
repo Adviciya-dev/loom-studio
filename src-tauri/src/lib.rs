@@ -65,6 +65,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_folder_picker,
             commands::open_file_picker,
+            commands::read_test_cases,
             commands::read_harness_tasks,
             commands::engine_command,
             commands::read_directory,

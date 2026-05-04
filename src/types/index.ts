@@ -77,3 +77,24 @@ export interface DiffPayload {
   sessionId: string
   files: DiffFile[]
 }
+
+export interface TestCase {
+  id: string
+  title: string
+  type: string
+  priority: string
+  automated: string
+  file_path: string
+}
+
+export const TEST_CASE_STATUSES = ['idle', 'running', 'passed', 'failed'] as const
+export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number]
+
+export interface TestRunResult {
+  total: number
+  passed: number
+  failed: number
+  duration: string
+  passRate: number
+  failedTests: Array<{ id: string; error: string }>
+}

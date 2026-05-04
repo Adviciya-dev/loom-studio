@@ -1,4 +1,14 @@
-import type { Project, Task, EngineStatus, LogLine, DiffPayload, HarnessTemplate } from '@/types'
+import type {
+  Project,
+  Task,
+  EngineStatus,
+  LogLine,
+  DiffPayload,
+  HarnessTemplate,
+  TestCase,
+  TestCaseStatus,
+  TestRunResult,
+} from '@/types'
 
 export interface AppState {
   projects: Project[]
@@ -26,6 +36,10 @@ export interface AppState {
   gitBranchPushed: boolean | null
   ghOpenPrs: GhPrItem[]
   customTemplates: HarnessTemplate[]
+  testCases: TestCase[]
+  testStatuses: Record<string, TestCaseStatus>
+  testRunResult: TestRunResult | null
+  isRunningTests: boolean
 }
 
 export interface GhPrItem {
@@ -57,11 +71,15 @@ export const initialState: AppState = {
   gitSshError: false,
   appMode: 'run',
   ghAvailable: null,
-  ghDefaultBranch: 'main',
+  ghDefaultBranch: '',
   gitCommitsOnBranch: [],
   gitBranchPushed: null,
   ghOpenPrs: [],
   customTemplates: [],
+  testCases: [],
+  testStatuses: {},
+  testRunResult: null,
+  isRunningTests: false,
 }
 
 export type AppAction =
@@ -96,3 +114,8 @@ export type AppAction =
   | { type: 'SET_GIT_BRANCH_PUSHED'; pushed: boolean }
   | { type: 'SET_GH_OPEN_PRS'; prs: GhPrItem[] }
   | { type: 'SET_CUSTOM_TEMPLATES'; templates: HarnessTemplate[] }
+  | { type: 'SET_TEST_CASES'; cases: TestCase[] }
+  | { type: 'SET_TEST_STATUS'; testId: string; status: TestCaseStatus }
+  | { type: 'SET_TEST_RUN_RESULT'; result: TestRunResult }
+  | { type: 'SET_IS_RUNNING_TESTS'; value: boolean }
+  | { type: 'CLEAR_TEST_RESULTS' }

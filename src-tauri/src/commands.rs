@@ -198,6 +198,88 @@ pub async fn open_file_picker(app: tauri::AppHandle) -> Option<String> {
         })
 }
 
+/// Reads all .md test case files from `{path}/harness/test_cases/` and parses their metadata.
+/// Returns an empty array if the directory does not exist or is empty.
+#[tauri::command]
+pub fn read_test_cases(path: String) -> Vec<HashMap<String, String>> {
+    let harness = Path::new(&path).join("harness");
+    // Accept both naming conventions: test_cases and test-cases
+    let dir = {
+        let a = harness.join("test_cases");
+        let b = harness.join("test-cases");
+        if a.is_dir() { a } else { b }
+    };
+    if !dir.is_dir() {
+        return vec![];
+    }
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let p = e.path();
+            p.extension().map_or(false, |ext| ext == "md")
+                && p.file_name().map_or(false, |n| n != "overview.md")
+        })
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            let p = entry.path();
+            let file_path = p.to_string_lossy().to_string();
+            let stem = p.file_stem()?.to_string_lossy().to_string();
+            let content = fs::read_to_string(&p).ok()?;
+            Some(parse_test_case_md(&content, &file_path, &stem))
+        })
+        .collect()
+}
+
+fn parse_test_case_md(content: &str, file_path: &str, stem: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    map.insert("file_path".to_string(), file_path.to_string());
+
+    let mut id = stem.to_string();
+    let mut title = String::new();
+    let mut tc_type = String::new();
+    let mut priority = String::new();
+    let mut automated = String::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if title.is_empty() && trimmed.starts_with("# ") {
+            let heading = trimmed[2..].trim();
+            if let Some(pos) = heading.find(": ") {
+                id = heading[..pos].trim().to_string();
+                title = heading[pos + 2..].trim().to_string();
+            } else {
+                title = heading.to_string();
+            }
+        }
+        if trimmed.starts_with('|') && !trimmed.starts_with("|---") && !trimmed.starts_with("| Field") {
+            let cols: Vec<&str> = trimmed.split('|').collect();
+            if cols.len() >= 3 {
+                let key = cols[1].trim().replace("**", "").to_lowercase();
+                let val = cols[2].trim().to_string();
+                match key.as_str() {
+                    "type" => tc_type = val,
+                    "priority" => priority = val,
+                    "automated" => automated = val,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    map.insert("id".to_string(), id);
+    map.insert("title".to_string(), title);
+    map.insert("type".to_string(), tc_type);
+    map.insert("priority".to_string(), priority);
+    map.insert("automated".to_string(), automated);
+    map
+}
+
 /// Reads all .md files from `{path}/harness/` and returns their filename + raw content.
 /// Returns an empty array (not an error) if the harness folder does not exist.
 #[tauri::command]

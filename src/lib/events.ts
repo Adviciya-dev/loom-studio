@@ -7,6 +7,8 @@ import type {
   Preferences,
   EngineStatus,
   HarnessTemplate,
+  TestCaseStatus,
+  TestRunResult,
 } from '@/types'
 
 // ─── Payload types ────────────────────────────────────────────────────────────
@@ -112,3 +114,32 @@ export const onGitPullDiverged = (cb: (branch: string) => void) =>
 
 export const onTemplates = (cb: (templates: HarnessTemplate[]) => void) =>
   listen<HarnessTemplate[]>('templates', (e) => cb(e.payload))
+
+export const onTestStatus = (
+  cb: (testId: string, status: TestCaseStatus, error?: string) => void
+) =>
+  listen<{ test_id: string; status: TestCaseStatus; error?: string }>('test_status', (e) =>
+    cb(e.payload.test_id, e.payload.status, e.payload.error)
+  )
+
+export const onTestRunStarted = (cb: (total: number) => void) =>
+  listen<{ total: number }>('test_run_started', (e) => cb(e.payload.total))
+
+export const onTestRunComplete = (cb: (result: TestRunResult) => void) =>
+  listen<{
+    total: number
+    passed: number
+    failed: number
+    duration: string
+    pass_rate: number
+    failed_tests: Array<{ id: string; error: string }>
+  }>('test_run_complete', (e) =>
+    cb({
+      total: e.payload.total,
+      passed: e.payload.passed,
+      failed: e.payload.failed,
+      duration: e.payload.duration,
+      passRate: e.payload.pass_rate,
+      failedTests: e.payload.failed_tests,
+    })
+  )
