@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import { onGhPrCreated, onHarnessLogLine, onHarnessDone } from '@/lib/events'
-import type { GhPrItem } from '@/context/types'
 import styles from './GitHubPR.module.css'
 
 function GitHubPR() {
@@ -19,7 +18,7 @@ function GitHubPR() {
     ghOpenPrs,
   } = state
 
-  const [base, setBase] = useState(ghDefaultBranch || 'main')
+  const [base, setBase] = useState(ghDefaultBranch)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [draft, setDraft] = useState(false)
@@ -31,9 +30,9 @@ function GitHubPR() {
   const streamRef = useRef('')
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sync base when default branch loads
+  // Sync base when default branch loads (skip if not yet resolved)
   useEffect(() => {
-    setBase(ghDefaultBranch || 'main')
+    if (ghDefaultBranch) setBase(ghDefaultBranch)
   }, [ghDefaultBranch])
 
   // Auto-fill title from first commit
@@ -90,23 +89,9 @@ function GitHubPR() {
     }
   }, [dispatch])
 
-  // Load project-level data directly via Rust (avoids Go engine event race)
-  useEffect(() => {
-    if (!activeProject) return
-    invoke<boolean>('gh_check')
-      .then((available) => dispatch({ type: 'SET_GH_AVAILABLE', available }))
-      .catch(() => {})
-    invoke<string>('gh_default_branch', { projectPath: activeProject.path })
-      .then((branch) => dispatch({ type: 'SET_GH_DEFAULT_BRANCH', branch }))
-      .catch(() => {})
-    invoke<GhPrItem[]>('gh_pr_list', { projectPath: activeProject.path })
-      .then((prs) => dispatch({ type: 'SET_GH_OPEN_PRS', prs }))
-      .catch(() => {})
-  }, [activeProject?.id, dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Load branch-specific data via Rust
   useEffect(() => {
-    if (!activeProject || !gitBranch) return
+    if (!activeProject || !gitBranch || !base) return
     invoke<string[]>('git_log_branch', { projectPath: activeProject.path, base })
       .then((commits) => dispatch({ type: 'SET_GIT_COMMITS_ON_BRANCH', commits }))
       .catch(() => {})
@@ -221,7 +206,7 @@ Keep it concise and professional. Output ONLY the markdown body, no preamble.`
             value={base}
             onChange={(e) => setBase(e.target.value)}
           >
-            <option value={ghDefaultBranch || 'main'}>{ghDefaultBranch || 'main'}</option>
+            <option value={ghDefaultBranch}>{ghDefaultBranch || '…'}</option>
             {state.gitBranches
               .filter((b) => b !== gitBranch && b !== ghDefaultBranch)
               .map((b) => (

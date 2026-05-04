@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { AppProvider, useApp } from '@/context/AppContext'
 import { ErrorBoundary } from '@/ErrorBoundary'
 import { engineCommand } from '@/lib/ipc'
+import type { GhPrItem } from '@/context/types'
 import {
   onProjects,
   onLogLine,
@@ -15,6 +17,9 @@ import {
   onGitCommitted,
   onGitRemoteInfo,
   onSshUnlocked,
+  onTestStatus,
+  onTestRunStarted,
+  onTestRunComplete,
 } from '@/lib/events'
 import Sidebar from '@/components/Sidebar/Sidebar'
 import TopBar from '@/components/TopBar/TopBar'
@@ -22,6 +27,7 @@ import Workspace from '@/components/Workspace/Workspace'
 import BottomBar from '@/components/BottomBar/BottomBar'
 import HarnessManager from '@/components/HarnessManager/HarnessManager'
 import GitHubPR from '@/components/GitHubPR/GitHubPR'
+import QATestSuite from '@/components/QATestSuite/QATestSuite'
 import TaskSelectModal from '@/components/TaskSelectModal/TaskSelectModal'
 import DiffOverlay from '@/components/DiffOverlay/DiffOverlay'
 import Toast from '@/components/Toast/Toast'
@@ -110,6 +116,12 @@ function AppInner() {
 
       onSshUnlocked(() => dispatch({ type: 'SET_GIT_SSH_ERROR', value: false })),
 
+      onTestStatus((testId, status) => dispatch({ type: 'SET_TEST_STATUS', testId, status })),
+
+      onTestRunStarted(() => dispatch({ type: 'SET_IS_RUNNING_TESTS', value: true })),
+
+      onTestRunComplete((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result })),
+
       ...(import.meta.env.DEV
         ? [onEngineReady(() => console.log('[loom] engine ready'))] // eslint-disable-line no-console
         : []),
@@ -132,6 +144,21 @@ function AppInner() {
     }
   }, [dispatch])
 
+  // Prefetch GitHub data whenever the active project changes so PR section opens instantly
+  useEffect(() => {
+    if (!state.activeProject) return
+    const path = state.activeProject.path
+    invoke<boolean>('gh_check')
+      .then((available) => dispatch({ type: 'SET_GH_AVAILABLE', available }))
+      .catch(() => {})
+    invoke<string>('gh_default_branch', { projectPath: path })
+      .then((branch) => dispatch({ type: 'SET_GH_DEFAULT_BRANCH', branch }))
+      .catch(() => {})
+    invoke<GhPrItem[]>('gh_pr_list', { projectPath: path })
+      .then((prs) => dispatch({ type: 'SET_GH_OPEN_PRS', prs }))
+      .catch(() => {})
+  }, [state.activeProject?.id, dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className={styles.app}>
       <Sidebar />
@@ -143,20 +170,7 @@ function AppInner() {
         ) : state.appMode === 'github' ? (
           <GitHubPR />
         ) : state.appMode === 'qa' ? (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: 'column',
-              gap: 12,
-              color: 'var(--text-muted)',
-            }}
-          >
-            <span style={{ fontSize: 32, opacity: 0.3 }}>🧪</span>
-            <span style={{ fontSize: 13 }}>QA & Testing — coming soon</span>
-          </div>
+          <QATestSuite />
         ) : (
           <>
             <Workspace />

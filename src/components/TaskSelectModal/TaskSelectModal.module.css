@@ -1,149 +1,199 @@
+/* ─── Overlay ───────────────────────────────────────────── */
+
 .overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.55);
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 72px;
   z-index: 100;
 }
 
-.modal {
-  background-color: #2a2a32;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+/* ─── Palette ───────────────────────────────────────────── */
+
+.palette {
+  background-color: #1e1e24;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-lg);
-  width: 560px;
-  min-height: 240px;
-  max-height: 560px;
+  width: 660px;
+  max-height: 540px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  box-shadow:
+    0 32px 80px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  animation: paletteIn 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.header {
+@keyframes paletteIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ─── Search row ────────────────────────────────────────── */
+
+.searchRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: var(--space-sm);
+  padding: 12px var(--space-md);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
 }
 
-.title {
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.closeBtn {
+.searchIcon {
+  width: 15px;
+  height: 15px;
   color: var(--text-muted);
-  font-size: 18px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  transition:
-    color 0.15s,
-    background-color 0.15s;
-}
-
-.closeBtn:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-hover);
-}
-
-.searchBar {
-  padding: var(--space-sm) var(--space-lg);
-  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .searchInput {
-  width: 100%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 6px var(--space-sm);
-  font-size: var(--font-size-sm);
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 14px;
   font-family: var(--font-ui);
   color: var(--text-primary);
   outline: none;
-  box-sizing: border-box;
-  transition: border-color 0.15s;
+  min-width: 0;
 }
 
 .searchInput::placeholder {
   color: var(--text-muted);
 }
 
-.searchInput:focus {
-  border-color: var(--accent);
+.kbdEsc {
+  font-size: 10px;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: default;
 }
 
-.filters {
+/* ─── Filter chips ──────────────────────────────────────── */
+
+.filterRow {
   display: flex;
-  gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-lg);
-  border-bottom: 1px solid var(--border-subtle);
+  align-items: center;
+  gap: 3px;
+  padding: 6px var(--space-md);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
-.filterBtn {
-  padding: 3px var(--space-sm);
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
   font-size: var(--font-size-xs);
-  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
   color: var(--text-muted);
   border: 1px solid transparent;
-  transition: all 0.15s;
+  transition:
+    color 0.12s,
+    background-color 0.12s,
+    border-color 0.12s;
+  cursor: pointer;
 }
 
-.filterBtn:hover {
+.filterChip:hover {
+  color: var(--text-secondary);
+  background-color: var(--bg-hover);
+}
+
+.filterChipActive {
   color: var(--text-primary);
-  border-color: var(--border);
+  background-color: rgba(124, 108, 252, 0.15);
+  border-color: rgba(124, 108, 252, 0.35);
 }
 
-.filterBtnActive {
-  color: #fff;
-  border-color: var(--accent);
-  background-color: var(--accent);
+.filterChipActive:hover {
+  background-color: rgba(124, 108, 252, 0.2);
 }
 
-.filterBtnActive:hover {
-  background-color: var(--accent-hover);
-  border-color: var(--accent-hover);
+.filterCount {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
 }
+
+.filterSpacer {
+  flex: 1;
+}
+
+.kbdHint {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.kbdHint kbd {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* ─── Task list ─────────────────────────────────────────── */
 
 .list {
   overflow-y: auto;
   flex: 1;
-  padding: var(--space-xs) 0;
+  padding: 4px 0;
 }
 
 .taskItem {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-lg);
+  gap: var(--space-md);
+  padding: 9px var(--space-md);
   cursor: pointer;
-  transition: background-color 0.1s;
+  transition: background-color 0.08s;
+  border-radius: 0;
 }
 
-.taskItem:hover {
-  background-color: var(--bg-hover);
+.taskItemSelected {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.taskItemActive {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .taskLeft {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  align-items: center;
+  gap: var(--space-sm);
   flex: 1;
+  min-width: 0;
 }
 
 .taskId {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
   font-family: var(--font-mono);
+  flex-shrink: 0;
+  min-width: 72px;
 }
 
 .taskTitle {
@@ -155,70 +205,101 @@
   text-overflow: ellipsis;
 }
 
-.taskMeta {
+.taskRight {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   flex-shrink: 0;
-  margin-left: var(--space-md);
 }
 
-.badge {
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
+/* ─── Type tags ─────────────────────────────────────────── */
+
+.typeTag {
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
   font-weight: 500;
   text-transform: capitalize;
+  background-color: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+/* stylelint-disable selector-class-pattern */
+.typeTag_feature {
+  background-color: rgba(124, 108, 252, 0.12);
+  color: #9183fc;
+}
+.typeTag_perf {
+  background-color: rgba(255, 159, 10, 0.12);
+  color: #ff9f0a;
+}
+.typeTag_security {
+  background-color: rgba(255, 69, 58, 0.12);
+  color: #ff6b62;
+}
+.typeTag_test {
+  background-color: rgba(90, 200, 250, 0.12);
+  color: #5ac8fa;
+}
+.typeTag_design {
+  background-color: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+}
+/* stylelint-enable selector-class-pattern */
+
+/* ─── Status badges ─────────────────────────────────────── */
+
+.badge {
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .badgePending {
-  background-color: rgba(245, 158, 11, 0.15);
+  background-color: rgba(245, 158, 11, 0.12);
   color: #f59e0b;
 }
 
 .badgeInProgress {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
 }
 
 .badgeCompleted {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #34d399;
 }
 
-.due {
-  font-size: var(--font-size-xs);
+/* ─── Active / assign hints ─────────────────────────────── */
+
+.activeTag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background-color: var(--accent-subtle);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+
+.assignHint {
+  font-size: 10px;
   color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.assignBtn {
-  padding: var(--space-xs) var(--space-md);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: #fff;
-  background-color: var(--accent);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
   opacity: 0;
-  transition:
-    opacity 0.1s,
-    background-color 0.15s;
+  transition: opacity 0.1s;
+  white-space: nowrap;
 }
 
-.taskItem:hover .assignBtn {
+.assignHintVisible {
   opacity: 1;
 }
 
-.assignBtn:hover {
-  background-color: var(--accent-hover);
-}
+/* ─── Empty states ──────────────────────────────────────── */
 
 .empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
   padding: var(--space-xl);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
@@ -269,7 +350,18 @@
   line-height: 1.7;
 }
 
-/* ─── Skeleton rows ──────────────────────────────────── */
+/* ─── Footer ────────────────────────────────────────────── */
+
+.footer {
+  padding: 6px var(--space-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Skeleton rows ─────────────────────────────────────── */
 
 .skeletonRow {
   display: flex;
