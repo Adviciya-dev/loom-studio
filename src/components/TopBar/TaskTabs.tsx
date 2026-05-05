@@ -8,10 +8,6 @@ function TaskTabs() {
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
 
-  const openModal = () => {
-    if (state.activeProject) dispatch({ type: 'OPEN_TASK_MODAL' })
-  }
-
   const updateScrollState = useCallback(() => {
     const el = tabsRef.current
     if (!el) return
@@ -86,9 +82,9 @@ function TaskTabs() {
             </button>
           </div>
         ))}
-        <button className={styles.addBtn} onClick={openModal} title="Add task (Cmd+T)">
+        {/* <button className={styles.addBtn} onClick={openModal} title="Add task (Cmd+T)">
           + Task
-        </button>
+        </button> */}
       </div>
       {canScrollRight && (
         <button className={styles.scrollArrow} onClick={scrollRight} aria-label="Scroll tabs right">

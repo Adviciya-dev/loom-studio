@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppProvider, useApp } from '@/context/AppContext'
 import { ErrorBoundary } from '@/ErrorBoundary'
 import { engineCommand } from '@/lib/ipc'
-import type { GhPrItem } from '@/context/types'
 import {
   onProjects,
   onLogLine,
@@ -24,6 +23,7 @@ import {
 import Sidebar from '@/components/Sidebar/Sidebar'
 import TopBar from '@/components/TopBar/TopBar'
 import Workspace from '@/components/Workspace/Workspace'
+import LogPanel from '@/components/Workspace/LogPanel'
 import BottomBar from '@/components/BottomBar/BottomBar'
 import HarnessManager from '@/components/HarnessManager/HarnessManager'
 import GitHubPR from '@/components/GitHubPR/GitHubPR'
@@ -42,7 +42,21 @@ function AppInner() {
   engineStatusRef.current = state.engineStatus
 
   useEffect(() => {
-    const unlistens = [
+    // `alive` prevents the race where cleanup runs before Promises settle:
+    // cleanup sets alive=false; if a Promise resolves after cleanup it immediately
+    // calls its unlisten fn instead of storing it, so no orphaned listeners exist.
+    let alive = true
+    const unlistens: Array<() => void> = []
+
+    function onGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
+        e.preventDefault()
+        dispatch({ type: 'OPEN_TASK_MODAL' })
+      }
+    }
+    document.addEventListener('keydown', onGlobalKeyDown)
+
+    const pending: Array<Promise<() => void>> = [
       onProjects((projects) => dispatch({ type: 'SET_PROJECTS', projects })),
 
       onLogLine((line) => dispatch({ type: 'LOG_APPEND', line })),
@@ -127,35 +141,28 @@ function AppInner() {
         : []),
     ]
 
+    pending.forEach((p) =>
+      p.then((fn) => {
+        if (alive) unlistens.push(fn)
+        else fn() // cleanup already ran — unlisten immediately
+      })
+    )
+
     engineCommand({ action: 'get_projects' }).catch(() => {})
 
-    // Cmd+T / Ctrl+T opens the task select modal.
-    function onGlobalKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
-        e.preventDefault()
-        dispatch({ type: 'OPEN_TASK_MODAL' })
-      }
-    }
-    document.addEventListener('keydown', onGlobalKeyDown)
-
     return () => {
-      unlistens.forEach((p) => p.then((fn) => fn()))
+      alive = false
+      unlistens.forEach((fn) => fn())
       document.removeEventListener('keydown', onGlobalKeyDown)
     }
   }, [dispatch])
 
-  // Prefetch GitHub data whenever the active project changes so PR section opens instantly
+  // Only check gh availability on project change — default branch and PR list
+  // load lazily inside GitHubPR when the user opens that tab.
   useEffect(() => {
     if (!state.activeProject) return
-    const path = state.activeProject.path
     invoke<boolean>('gh_check')
       .then((available) => dispatch({ type: 'SET_GH_AVAILABLE', available }))
-      .catch(() => {})
-    invoke<string>('gh_default_branch', { projectPath: path })
-      .then((branch) => dispatch({ type: 'SET_GH_DEFAULT_BRANCH', branch }))
-      .catch(() => {})
-    invoke<GhPrItem[]>('gh_pr_list', { projectPath: path })
-      .then((prs) => dispatch({ type: 'SET_GH_OPEN_PRS', prs }))
       .catch(() => {})
   }, [state.activeProject?.id, dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -165,18 +172,19 @@ function AppInner() {
       <div className={styles.main}>
         <ErrorBanner />
         <TopBar />
-        {state.appMode === 'harness' ? (
-          <HarnessManager />
-        ) : state.appMode === 'github' ? (
-          <GitHubPR />
-        ) : state.appMode === 'qa' ? (
-          <QATestSuite />
-        ) : (
-          <>
+        <div className={styles.content}>
+          {state.appMode === 'harness' ? (
+            <HarnessManager />
+          ) : state.appMode === 'github' ? (
+            <GitHubPR />
+          ) : state.appMode === 'qa' ? (
+            <QATestSuite />
+          ) : (
             <Workspace />
-            <BottomBar />
-          </>
-        )}
+          )}
+        </div>
+        {state.appMode === 'run' && <BottomBar />}
+        <LogPanel />
       </div>
       <TaskSelectModal />
       <DiffOverlay />

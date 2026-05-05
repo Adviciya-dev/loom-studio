@@ -74,6 +74,8 @@ export type EngineCommand =
   | { action: 'delete_template'; id: string }
   | { action: 'run_test_case'; project_path: string; test_id: string }
   | { action: 'run_all_test_cases'; project_path: string; test_ids: string[] }
+  | { action: 'generate_and_run_test'; project_path: string; test_id: string; file_path: string }
+  | { action: 'stop_test' }
 
 export type RawTaskFile = { filename: string; content: string }
 

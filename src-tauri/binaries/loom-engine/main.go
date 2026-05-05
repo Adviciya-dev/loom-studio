@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -258,9 +260,14 @@ func main() {
 			}
 
 		case "kill":
+			cancelRunningTest()
 			if err := manager.Kill(); err != nil {
 				emitter.EmitEngineError(fmt.Sprintf("kill: %v", err))
 			}
+
+		case "stop_test":
+			cancelRunningTest()
+			emitter.Emit("engine_status", "idle")
 
 		case "save_task_history":
 			var taskID, projectID, completedAt string
@@ -661,6 +668,22 @@ func main() {
 			}
 			go runAllTestCases(emitter, projectPath, testIDs)
 
+		case "generate_and_run_test":
+			var projectPath, testID, filePath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("generate_and_run_test: missing project_path")
+				continue
+			}
+			if err := json.Unmarshal(cmd["test_id"], &testID); err != nil || testID == "" {
+				emitter.EmitEngineError("generate_and_run_test: missing test_id")
+				continue
+			}
+			if err := json.Unmarshal(cmd["file_path"], &filePath); err != nil || filePath == "" {
+				emitter.EmitEngineError("generate_and_run_test: missing file_path")
+				continue
+			}
+			go generateAndRunTest(emitter, projectPath, testID, filePath)
+
 		case "ping":
 			emitter.Emit("pong", nil)
 
@@ -679,7 +702,7 @@ func npxBin() string {
 
 func runTestCase(emitter *ipc.Emitter, projectPath, testID string) {
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
-	start := time.Now()
+	emitter.EmitLogLine(fmt.Sprintf("[%s] Running Playwright…", testID))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -688,37 +711,27 @@ func runTestCase(emitter *ipc.Emitter, projectPath, testID string) {
 	c := exec.CommandContext(ctx, npx, "playwright", "test", "--grep", testID, "--reporter=line")
 	c.Dir = projectPath
 	c.Env = append(os.Environ(), "CI=true")
-	out, err := c.CombinedOutput()
+
+	start := time.Now()
+	passed, output := streamCmd(ctx, emitter, c)
 	duration := fmt.Sprintf("%.1fs", time.Since(start).Seconds())
 
 	if ctx.Err() != nil {
-		emitter.Emit("test_status", map[string]interface{}{
-			"test_id": testID, "status": "failed",
-			"duration": duration, "error": "Timed out after 30s",
-		})
+		emitter.EmitLogLine(fmt.Sprintf("✗ %s timed out after 30s", testID))
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "duration": duration, "error": "Timed out after 30s"})
 		return
 	}
 
-	if err != nil {
-		errMsg := strings.TrimSpace(string(out))
-		if errMsg == "" {
-			errMsg = err.Error()
-		}
-		if len(errMsg) > 300 {
-			errMsg = errMsg[:300] + "…"
-		}
-		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "No such file") {
+	if !passed {
+		if strings.Contains(output, "not found") || strings.Contains(output, "No such file") {
 			emitter.EmitEngineError("missing_dep:playwright:Playwright not found. Run: npx playwright install")
 		}
-		emitter.Emit("test_status", map[string]interface{}{
-			"test_id": testID, "status": "failed",
-			"duration": duration, "error": errMsg,
-		})
+		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed (%s)", testID, duration))
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "duration": duration, "error": output})
 		return
 	}
-	emitter.Emit("test_status", map[string]interface{}{
-		"test_id": testID, "status": "passed", "duration": duration,
-	})
+	emitter.EmitLogLine(fmt.Sprintf("✓ %s passed (%s)", testID, duration))
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed", "duration": duration})
 }
 
 func runAllTestCases(emitter *ipc.Emitter, projectPath string, testIDs []string) {
@@ -732,6 +745,7 @@ func runAllTestCases(emitter *ipc.Emitter, projectPath string, testIDs []string)
 
 	for _, id := range testIDs {
 		emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "running"})
+		emitter.EmitLogLine(fmt.Sprintf("[%d/%d] %s — running…", passed+failed+1, total, id))
 		tStart := time.Now()
 
 		tCtx, tCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -739,46 +753,35 @@ func runAllTestCases(emitter *ipc.Emitter, projectPath string, testIDs []string)
 		c := exec.CommandContext(tCtx, npx, "playwright", "test", "--grep", id, "--reporter=line")
 		c.Dir = projectPath
 		c.Env = append(os.Environ(), "CI=true")
-		out, err := c.CombinedOutput()
+
+		ok, output := streamCmd(tCtx, emitter, c)
 		dur := fmt.Sprintf("%.1fs", time.Since(tStart).Seconds())
 		timedOut := tCtx.Err() != nil
 		tCancel()
 
 		if timedOut {
 			failed++
-			emitter.Emit("test_status", map[string]interface{}{
-				"test_id": id, "status": "failed", "duration": dur, "error": "Timed out after 30s",
-			})
+			emitter.EmitLogLine(fmt.Sprintf("✗ %s timed out", id))
+			emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "failed", "duration": dur, "error": "Timed out after 30s"})
 			failedTests = append(failedTests, map[string]string{"id": id, "error": "Timed out after 30s"})
 			continue
 		}
 
-		if err != nil {
+		if !ok {
 			failed++
-			errMsg := strings.TrimSpace(string(out))
-			if errMsg == "" {
-				errMsg = err.Error()
-			}
-			if len(errMsg) > 300 {
-				errMsg = errMsg[:300] + "…"
-			}
-			if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "No such file") {
+			if strings.Contains(output, "not found") || strings.Contains(output, "No such file") {
 				emitter.EmitEngineError("missing_dep:playwright:Playwright not found. Run: npx playwright install")
-				emitter.Emit("test_status", map[string]interface{}{
-					"test_id": id, "status": "failed", "duration": dur, "error": errMsg,
-				})
-				failedTests = append(failedTests, map[string]string{"id": id, "error": errMsg})
+				emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "failed", "duration": dur, "error": output})
+				failedTests = append(failedTests, map[string]string{"id": id, "error": output})
 				break
 			}
-			emitter.Emit("test_status", map[string]interface{}{
-				"test_id": id, "status": "failed", "duration": dur, "error": errMsg,
-			})
-			failedTests = append(failedTests, map[string]string{"id": id, "error": errMsg})
+			emitter.EmitLogLine(fmt.Sprintf("✗ %s failed (%s)", id, dur))
+			emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "failed", "duration": dur, "error": output})
+			failedTests = append(failedTests, map[string]string{"id": id, "error": output})
 		} else {
 			passed++
-			emitter.Emit("test_status", map[string]interface{}{
-				"test_id": id, "status": "passed", "duration": dur,
-			})
+			emitter.EmitLogLine(fmt.Sprintf("✓ %s passed (%s)", id, dur))
+			emitter.Emit("test_status", map[string]interface{}{"test_id": id, "status": "passed", "duration": dur})
 		}
 	}
 
@@ -799,8 +802,166 @@ func runAllTestCases(emitter *ipc.Emitter, projectPath string, testIDs []string)
 	})
 }
 
+// streamCmd runs cmd and emits each stdout/stderr line as a log_line event.
+// Returns (passed, lastOutput) where lastOutput holds the tail for error reporting.
+func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, string) {
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return false, err.Error()
+	}
+	stderr, err := c.StderrPipe()
+	if err != nil {
+		return false, err.Error()
+	}
+	if err := c.Start(); err != nil {
+		return false, err.Error()
+	}
+
+	var mu sync.Mutex
+	var tail []string
+	var wg sync.WaitGroup
+
+	scan := func(r interface{ Read([]byte) (int, error) }) {
+		defer wg.Done()
+		sc := bufio.NewScanner(r)
+		for sc.Scan() {
+			line := sc.Text()
+			if line == "" {
+				continue
+			}
+			emitter.EmitLogLine(line)
+			mu.Lock()
+			tail = append(tail, line)
+			if len(tail) > 30 {
+				tail = tail[len(tail)-30:]
+			}
+			mu.Unlock()
+		}
+	}
+
+	wg.Add(2)
+	go scan(stdout)
+	go scan(stderr)
+	wg.Wait()
+
+	runErr := c.Wait()
+	if ctx.Err() != nil {
+		return false, "Timed out"
+	}
+	mu.Lock()
+	out := strings.Join(tail, "\n")
+	mu.Unlock()
+	return runErr == nil, out
+}
+
+
+func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	// Register so kill / stop_test can cancel this goroutine
+	testCancelMu.Lock()
+	testCancelFn = cancel
+	testCancelMu.Unlock()
+
+	defer func() {
+		cancel()
+		testCancelMu.Lock()
+		testCancelFn = nil
+		testCancelMu.Unlock()
+		emitter.Emit("engine_status", "idle")
+	}()
+
+	emitter.Emit("engine_status", "running")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		emitter.EmitLogLine("✗ Cannot read test case: " + err.Error())
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		return
+	}
+
+	prompt := "You are a QA automation engineer. Run this test case end-to-end using Playwright.\n\n" +
+		"Do these steps in order:\n" +
+		"1. Read package.json and find the dev server port. Check if the app is running:\n" +
+		"   curl -s -o /dev/null -w \"%{http_code}\" http://localhost:<PORT>\n" +
+		"   If not running, warn the user clearly but continue.\n" +
+		"2. Check Playwright: npx playwright --version\n" +
+		"   If missing: npm install --save-dev @playwright/test && npx playwright install chromium\n" +
+		"3. Create directory: mkdir -p .loom-generated\n" +
+		"4. Write a complete Playwright TypeScript test to: .loom-generated/" + testID + ".spec.ts\n" +
+		"   - import { test, expect } from '@playwright/test';\n" +
+		"   - Test name must include the test ID: " + testID + "\n" +
+		"   - Write specific assertions based on the Expected Result\n" +
+		"5. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n" +
+		"6. After the run, output exactly one line: LOOM:PASSED or LOOM:FAILED\n\n" +
+		"TEST CASE:\n" + string(content)
+
+	cmd := exec.CommandContext(ctx,
+		"claude",
+		"--dangerously-skip-permissions",
+		"--print",
+		"--verbose",
+		"--output-format", "stream-json",
+		prompt,
+	)
+	cmd.Dir = projectPath
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		emitter.EmitLogLine("✗ " + err.Error())
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		emitter.EmitLogLine("✗ " + err.Error())
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		emitter.EmitLogLine("✗ Cannot start Claude: " + err.Error())
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		return
+	}
+
+	// TeeReader lets process.Streamer render the stream in real-time while we
+	// also capture the raw JSON to detect the LOOM:PASSED / LOOM:FAILED marker.
+	var raw bytes.Buffer
+	tee := io.TeeReader(stdout, &raw)
+
+	process.NewStreamer(tee, stderr).Stream(emitter)
+	cmd.Wait() //nolint:errcheck
+
+	status := "failed"
+	if strings.Contains(raw.String(), "LOOM:PASSED") {
+		status = "passed"
+	}
+
+	if status == "passed" {
+		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
+	} else {
+		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
+	}
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": status})
+}
+
 // chatMu ensures only one harness chat runs at a time.
 var chatMu sync.Mutex
+
+// testCancelMu guards the cancel function for the currently running QA test.
+var testCancelMu sync.Mutex
+var testCancelFn context.CancelFunc
+
+func cancelRunningTest() {
+	testCancelMu.Lock()
+	defer testCancelMu.Unlock()
+	if testCancelFn != nil {
+		testCancelFn()
+		testCancelFn = nil
+	}
+}
 
 type histMsg struct {
 	Role    string `json:"role"`

@@ -225,13 +225,12 @@ func parseStreamLine(line string) (items []outputItem, pendingOp *PendingOp, com
 		if err := json.Unmarshal([]byte(line), &res); err != nil {
 			return nil, nil, ""
 		}
+		// Only surface error results — success text was already streamed via
+		// assistant events; emitting it again causes duplicate log lines.
 		if res.Subtype == "error" || res.Subtype == "error_during_execution" {
 			if res.Result != "" {
 				return []outputItem{{text: "Error: " + res.Result}}, nil, ""
 			}
-		}
-		if r := strings.TrimSpace(res.Result); r != "" {
-			return []outputItem{{text: r}}, nil, ""
 		}
 		return nil, nil, ""
 
