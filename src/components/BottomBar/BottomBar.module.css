@@ -1,127 +1,89 @@
-.bottomBar {
+.bar {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  height: var(--bottombar-height);
+  gap: 6px;
+  height: 34px;
   padding: 0 var(--space-md);
-  background-color: var(--bg-surface);
-  border-top: 1px solid var(--border);
+  background-color: #0a0a0c;
+  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
-.attachBtn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.chevron {
   font-size: 14px;
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
+  color: var(--accent);
+  font-family: var(--font-mono);
   flex-shrink: 0;
-  transition:
-    background-color 0.15s,
-    color 0.15s;
+  user-select: none;
+  opacity: 0.8;
 }
 
-.attachBtn:hover:not(:disabled) {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.attachBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.promptInput {
+.input {
   flex: 1;
-  height: 28px;
-  padding: 0 var(--space-sm);
-  background-color: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  height: 22px;
+  background: transparent;
+  border: none;
   outline: none;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
   min-width: 0;
 }
 
-.promptInput::placeholder {
+.input::placeholder {
   color: var(--text-muted);
+  opacity: 0.5;
 }
 
-.promptInput:focus {
-  border-color: var(--accent);
-}
-
-.sendBtn {
-  padding: 0 var(--space-md);
-  height: 28px;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--text-primary);
-  background-color: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  transition: background-color 0.15s;
-}
-
-.sendBtn:not(:disabled):hover {
-  background-color: var(--bg-hover);
-}
-
-.sendBtn:disabled {
-  opacity: 0.4;
+.input:disabled {
   cursor: not-allowed;
 }
 
-.statusPills {
+.attachBtn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
-}
-
-.pill {
-  padding: 2px var(--space-sm);
-  font-size: var(--font-size-xs);
-  font-weight: 500;
+  justify-content: center;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
-  background-color: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 100px;
-  transition:
-    color 0.15s,
-    background-color 0.15s,
-    border-color 0.15s;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
 }
 
-.pillRunning {
-  color: var(--success);
-  border-color: rgba(16, 185, 129, 0.4);
-  background-color: rgba(16, 185, 129, 0.08);
+.attachBtn:hover:not(:disabled) {
+  opacity: 1;
 }
 
-.pillPaused {
-  color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.4);
-  background-color: rgba(245, 158, 11, 0.08);
+.attachBtn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
-.pillAwaiting {
-  color: #3b82f6;
-  border-color: rgba(59, 130, 246, 0.4);
-  background-color: rgba(59, 130, 246, 0.08);
+.sendBtn {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+  line-height: 1;
 }
 
-.pillCompleted {
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.4);
-  background-color: rgba(16, 185, 129, 0.08);
+.sendBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
-.pillError {
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.4);
-  background-color: rgba(239, 68, 68, 0.08);
+.sendBtn:not(:disabled):hover {
+  opacity: 1;
 }

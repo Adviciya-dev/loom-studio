@@ -1,39 +1,389 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
-import TaskDetailPanel from './TaskDetailPanel'
-import LogPanel from './LogPanel'
+import { engineCommand } from '@/lib/ipc'
+import { onTasks } from '@/lib/events'
+import type { Task, TaskStatus } from '@/types'
 import styles from './Workspace.module.css'
 
+const STATUS_FILTERS: Array<{ value: TaskStatus | 'all'; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'in-progress', label: 'In Progress' },
+  { value: 'completed', label: 'Done' },
+]
+
+function dotClass(status: TaskStatus | undefined): string {
+  if (status === 'in-progress') return `${styles.dot} ${styles.dotRunning}`
+  if (status === 'completed') return `${styles.dot} ${styles.dotDone}`
+  return `${styles.dot} ${styles.dotPending}`
+}
+
+function SkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} className={styles.skeletonRow}>
+          <span className={styles.skeletonDot} />
+          <span className={styles.skeletonId} />
+          <span className={styles.skeletonTitle} />
+          <span className={styles.skeletonPill} />
+        </div>
+      ))}
+    </>
+  )
+}
+
 function Workspace() {
-  const { state } = useApp()
-  const activeTask = state.activeTasks[state.activeTaskIndex] ?? null
+  const { state, dispatch } = useApp()
+  const { activeProject, activeTasks, activeTaskIndex, engineStatus } = state
+
+  const [allTasks, setAllTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState<TaskStatus | 'all'>('all')
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [taskContent, setTaskContent] = useState('')
+  const [contentLoading, setContentLoading] = useState(false)
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const selectedItemRef = useRef<HTMLButtonElement>(null)
+
+  // Load all tasks whenever the active project changes
+  useEffect(() => {
+    if (!activeProject) return
+    let alive = true
+    const unsubs: Array<() => void> = []
+    setLoading(true)
+    setAllTasks([])
+    setSelectedId(null)
+
+    // Use a flag so only the FIRST tasks response after our get_tasks is used.
+    // This prevents TaskSelectModal's concurrent get_tasks from overwriting our list
+    // with potentially different data and causing duplicates.
+    let gotFirstResponse = false
+    engineCommand({ action: 'get_tasks', path: activeProject.path + '/harness' }).catch(() => {})
+    onTasks((received) => {
+      if (!alive) return
+      if (gotFirstResponse) return
+      gotFirstResponse = true
+      const seen = new Set<string>()
+      const unique = (received ?? []).filter((t) => {
+        if (seen.has(t.id)) return false
+        seen.add(t.id)
+        return true
+      })
+      setAllTasks(unique)
+      setLoading(false)
+      requestAnimationFrame(() => {
+        if (listRef.current) listRef.current.scrollTop = 0
+      })
+    }).then((fn) => (alive ? unsubs.push(fn) : fn()))
+
+    return () => {
+      alive = false
+      unsubs.forEach((fn) => fn())
+    }
+  }, [activeProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Only pull commitHash from the live session — status comes from the file.
+  // De-duplicate by ID a second time in case multiple onTasks events race.
+  const seenIds = new Set<string>()
+  const tasks = allTasks
+    .filter((t) => {
+      if (seenIds.has(t.id)) return false
+      seenIds.add(t.id)
+      return true
+    })
+    .map((t) => {
+      const live = activeTasks.find((a) => a.id === t.id)
+      return live?.commitHash ? { ...t, commitHash: live.commitHash } : t
+    })
+
+  const filtered =
+    filter === 'all' ? tasks : tasks.filter((t) => (t.status ?? 'pending') === filter)
+
+  const selectedTask = tasks.find((t) => t.id === selectedId) ?? null
+
+  // Scroll selected item into view when selection changes
+  useEffect(() => {
+    selectedItemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [selectedId])
+
+  const handleSelectTask = useCallback(
+    async (task: Task) => {
+      if (selectedId === task.id) return
+      setSelectedId(task.id)
+      setTaskContent('')
+      setIsEditing(false)
+      setEditContent('')
+
+      const existingIdx = activeTasks.findIndex((a) => a.id === task.id)
+      if (existingIdx >= 0) {
+        dispatch({ type: 'SET_ACTIVE_TASK', index: existingIdx })
+      } else {
+        dispatch({ type: 'ADD_TASK', task })
+      }
+
+      if (!activeProject) return
+      const absPath = task.file_path
+        ? `${activeProject.path}/${task.file_path}`
+        : task.filename
+          ? `${activeProject.path}/harness/tasks/${task.filename}`
+          : null
+      if (!absPath) return
+      setContentLoading(true)
+      try {
+        const content = await invoke<string>('read_file_content', { path: absPath })
+        setTaskContent(content)
+      } catch {
+        setTaskContent('')
+      } finally {
+        setContentLoading(false)
+      }
+    },
+    [selectedId, activeTasks, activeProject, dispatch]
+  )
+
+  const activeTask = activeTasks[activeTaskIndex] ?? null
+  const isIdle = engineStatus === 'idle'
+  const isRunning = engineStatus === 'running'
+  const isPaused = engineStatus === 'paused'
+  const isCompleted = selectedTask?.status === 'completed'
+  const canRun = isIdle && !!selectedTask && !!activeProject && !isCompleted
+
+  async function handleRun() {
+    if (!canRun || !selectedTask || !activeProject) return
+    dispatch({ type: 'LOG_CLEAR' })
+    dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
+    await engineCommand({
+      action: 'start',
+      task_id: selectedTask.id,
+      task_title: selectedTask.title,
+      prompt: selectedTask.prompt,
+      project_path: activeProject.path,
+    }).catch(() => dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' }))
+  }
+
+  const isDirty = isEditing && editContent !== taskContent
+
+  function handleStartEdit() {
+    setEditContent(taskContent)
+    setIsEditing(true)
+  }
+
+  function handleCancelEdit() {
+    setIsEditing(false)
+    setEditContent(taskContent)
+  }
+
+  async function handleSave() {
+    if (!selectedTask || !activeProject || !isDirty) return
+    const absPath = selectedTask.file_path
+      ? `${activeProject.path}/${selectedTask.file_path}`
+      : selectedTask.filename
+        ? `${activeProject.path}/harness/tasks/${selectedTask.filename}`
+        : null
+    if (!absPath) return
+    setSaving(true)
+    try {
+      await invoke('write_file_content', { path: absPath, content: editContent })
+      setTaskContent(editContent)
+      setIsEditing(false)
+    } catch {
+      // keep editing state open so user doesn't lose changes
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!activeProject) {
+    return (
+      <div className={styles.empty}>
+        <p className={styles.emptyTitle}>No project open</p>
+        <p className={styles.emptyHint}>Click the project selector to open a project</p>
+      </div>
+    )
+  }
 
   return (
-    <div className={styles.workspace}>
-      {activeTask ? (
-        <TaskDetailPanel task={activeTask} />
-      ) : (
-        <div className={styles.taskDetailPanel}>
-          <div className={styles.emptyState}>
-            {!state.activeProject ? (
-              <>
-                <p className={styles.emptyTitle}>No project open</p>
-                <p className={styles.emptyHint}>
-                  Click the project selector in the top bar to open a project
-                </p>
-              </>
-            ) : (
-              <>
-                <p className={styles.emptyTitle}>No task selected</p>
-                <p className={styles.emptyHint}>
-                  Click "+ Task" to select a task from your project
-                </p>
-              </>
+    <div className={styles.split}>
+      {/* ── Left panel — task list ──────────────────────── */}
+      <div className={styles.left}>
+        <div className={styles.leftHeader}>
+          <span className={styles.leftTitle}>
+            Tasks
+            {!loading && tasks.length > 0 && (
+              <span className={styles.count}>{filtered.length}</span>
             )}
-          </div>
+          </span>
+          {loading && <span className={styles.loadingDot} />}
         </div>
-      )}
-      <div className={styles.divider} />
-      <LogPanel />
+
+        <div className={styles.chips}>
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              className={`${styles.chip} ${filter === f.value ? styles.chipActive : ''}`}
+              onClick={() => {
+                setFilter(f.value)
+                if (listRef.current) listRef.current.scrollTop = 0
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.list} ref={listRef}>
+          {loading ? (
+            <SkeletonRows />
+          ) : tasks.length === 0 ? (
+            <div className={styles.leftEmpty}>
+              <p>No tasks found.</p>
+              <p>
+                Add <code>.md</code> files to <code>harness/tasks/</code>
+              </p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className={styles.leftEmpty}>
+              <p>No {filter !== 'all' ? filter : ''} tasks.</p>
+            </div>
+          ) : (
+            filtered.map((task) => {
+              const st = task.status ?? 'pending'
+              const isSelected = selectedId === task.id
+              return (
+                <button
+                  key={task.id}
+                  ref={isSelected ? selectedItemRef : null}
+                  className={`${styles.listItem} ${isSelected ? styles.listItemActive : ''}`}
+                  onClick={() => handleSelectTask(task)}
+                >
+                  <span className={dotClass(task.status)} />
+                  <span className={styles.itemId}>{task.id}</span>
+                  <span className={styles.itemTitle}>{task.title}</span>
+                  <span className={`${styles.statusPill} ${styles[`pill_${st}`]}`}>
+                    {st === 'in-progress' ? 'Active' : st === 'completed' ? 'Done' : 'Pending'}
+                  </span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ── Right panel — task detail ───────────────────── */}
+      <div className={styles.right}>
+        {!selectedTask ? (
+          <div className={styles.noSelection}>
+            <span className={styles.noSelectionIcon}>←</span>
+            <span>Select a task</span>
+          </div>
+        ) : (
+          <>
+            <div className={styles.rightHeader}>
+              <div className={styles.rightHeaderInfo}>
+                <span className={styles.detailId}>{selectedTask.id}</span>
+                <span className={styles.detailTitle}>{selectedTask.title}</span>
+              </div>
+
+              <div className={styles.headerActions}>
+                {isEditing ? (
+                  <>
+                    <button className={styles.btnCancel} onClick={handleCancelEdit}>
+                      Cancel
+                    </button>
+                    <button
+                      className={styles.btnSave}
+                      onClick={handleSave}
+                      disabled={!isDirty || saving}
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {taskContent && !isRunning && !isPaused && (
+                      <button className={styles.btnEdit} onClick={handleStartEdit}>
+                        ✎ Edit
+                      </button>
+                    )}
+                    {isRunning ? (
+                      <span className={styles.runningBadge}>● Running…</span>
+                    ) : isPaused ? (
+                      <span className={styles.pausedBadge}>⏸ Paused</span>
+                    ) : isCompleted ? (
+                      <span className={styles.doneBadge}>✓ Done</span>
+                    ) : (
+                      <button className={styles.runBtn} onClick={handleRun} disabled={!canRun}>
+                        ▶ Run
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className={styles.metaRow}>
+              {selectedTask.type && (
+                <span
+                  className={`${styles.badge} ${styles[`type_${selectedTask.type}` as keyof typeof styles] ?? styles.badgeDefault}`}
+                >
+                  {selectedTask.type}
+                </span>
+              )}
+              {selectedTask.due && (
+                <span className={styles.metaItem}>
+                  Due <strong>{selectedTask.due}</strong>
+                </span>
+              )}
+              {selectedTask.commitHash && (
+                <span className={styles.commitBadge}>✓ {selectedTask.commitHash.slice(0, 7)}</span>
+              )}
+              {activeTask?.id === selectedTask.id && engineStatus !== 'idle' && (
+                <span className={styles.engineBadge}>{engineStatus}</span>
+              )}
+            </div>
+
+            <div className={styles.rightBody}>
+              <div className={styles.sectionLabel}>
+                Task
+                {isDirty && <span className={styles.dirtyDot} title="Unsaved changes" />}
+              </div>
+              {contentLoading ? (
+                <div className={styles.contentSkeleton}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={styles.contentSkeletonLine}
+                      style={{ width: `${70 + (i % 3) * 10}%` }}
+                    />
+                  ))}
+                </div>
+              ) : isEditing ? (
+                <textarea
+                  className={styles.contentEditor}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  spellCheck={false}
+                  autoFocus
+                />
+              ) : taskContent ? (
+                <pre className={styles.contentBlock} onDoubleClick={handleStartEdit}>
+                  {taskContent}
+                </pre>
+              ) : (
+                <div className={styles.loadingText}>No content available.</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

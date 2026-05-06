@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
+import type { GhPrItem } from '@/context/types'
 import { engineCommand } from '@/lib/ipc'
 import { onGhPrCreated, onHarnessLogLine, onHarnessDone } from '@/lib/events'
 import styles from './GitHubPR.module.css'
@@ -30,7 +31,19 @@ function GitHubPR() {
   const streamRef = useRef('')
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sync base when default branch loads (skip if not yet resolved)
+  // Load default branch + open PRs when this tab is opened (lazy, not on every project switch)
+  useEffect(() => {
+    if (!activeProject) return
+    const path = activeProject.path
+    invoke<string>('gh_default_branch', { projectPath: path })
+      .then((branch) => dispatch({ type: 'SET_GH_DEFAULT_BRANCH', branch }))
+      .catch(() => {})
+    invoke<GhPrItem[]>('gh_pr_list', { projectPath: path })
+      .then((prs) => dispatch({ type: 'SET_GH_OPEN_PRS', prs }))
+      .catch(() => {})
+  }, [activeProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync base when default branch loads
   useEffect(() => {
     if (ghDefaultBranch) setBase(ghDefaultBranch)
   }, [ghDefaultBranch])

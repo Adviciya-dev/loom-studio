@@ -1,28 +1,70 @@
-.logPanel {
+/* ── Panel container (fixed height, sits at bottom) ─── */
+
+.panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-width: 0;
+  flex-shrink: 0;
   background-color: #0a0a0c;
+  border-top: 1px solid var(--border);
   overflow: hidden;
+  position: relative;
+  transition: height 0.05s;
 }
+
+/* ── Resize handle (invisible, draggable strip at top) ─ */
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: ns-resize;
+  z-index: 10;
+}
+
+.resizeHandle:hover {
+  background: rgba(124, 108, 252, 0.35);
+}
+
+/* ── Header / tab bar ──────────────────────────────────── */
 
 .header {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: 6px var(--space-md);
+  height: 33px;
+  padding: 0 var(--space-sm) 0 0;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   background-color: var(--bg-surface);
+  gap: var(--space-xs);
 }
 
-.title {
-  font-size: var(--font-size-xs);
+.tabBtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 var(--space-md);
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.tabBtn:hover {
+  color: var(--text-primary);
+}
+
+.tabLabel {
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  letter-spacing: 0.07em;
+  color: inherit;
+  user-select: none;
 }
 
 .liveDot {
@@ -45,10 +87,18 @@
 }
 
 .lineCount {
-  margin-left: auto;
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  opacity: 0.7;
+}
+
+.headerActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
 }
 
 .conflictBtn {
@@ -77,16 +127,6 @@
   }
 }
 
-.clearBtn {
-  font-size: 10px;
-  color: var(--text-muted);
-  transition: color 0.15s;
-}
-
-.clearBtn:hover {
-  color: var(--text-secondary);
-}
-
 .scrollBtn {
   font-size: 10px;
   color: var(--accent);
@@ -103,12 +143,52 @@
   background: rgba(124, 108, 252, 0.25);
 }
 
-/* ── Body ─────────────────────────────────────────────────────── */
+.clearBtn {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition:
+    color 0.15s,
+    background 0.12s;
+}
+
+.clearBtn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.toggleBtn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.12s;
+}
+
+.toggleBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ── Body ─────────────────────────────────────────── */
 
 .body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-sm) 0;
+  padding: var(--space-xs) 0;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
@@ -127,7 +207,7 @@
   border-radius: 3px;
 }
 
-/* ── Empty state ──────────────────────────────────────────────── */
+/* ── Empty state ──────────────────────────────────── */
 
 .empty {
   display: flex;
@@ -143,7 +223,7 @@
   font-weight: 700;
 }
 
-/* ── Log lines ────────────────────────────────────────────────── */
+/* ── Log lines ────────────────────────────────────── */
 
 .line {
   display: flex;
@@ -174,8 +254,6 @@
   white-space: pre-wrap;
 }
 
-/* ── Line kinds ───────────────────────────────────────────────── */
-
 .kindText .text {
   color: #c8c8d4;
 }
@@ -204,7 +282,7 @@
   opacity: 0.5;
 }
 
-/* ── Claude chat bubble ───────────────────────────────────────── */
+/* ── Claude bubble ────────────────────────────────── */
 
 .bubble {
   margin: 3px var(--space-md) 3px calc(var(--space-md) + 2px);
@@ -234,7 +312,7 @@
   user-select: none;
 }
 
-/* ── Tool line internals ──────────────────────────────────────── */
+/* ── Tool line ────────────────────────────────────── */
 
 .toolLine {
   display: inline-flex;
@@ -242,7 +320,6 @@
   gap: 7px;
   flex-wrap: wrap;
 }
-
 .toolIcon {
   font-size: 11px;
   opacity: 0.7;
@@ -273,7 +350,7 @@
   max-width: 420px;
 }
 
-/* ── Thinking indicator ───────────────────────────────────────── */
+/* ── Thinking indicator ───────────────────────────── */
 
 .thinking {
   display: flex;
@@ -292,7 +369,6 @@
   width: 16px;
   flex-shrink: 0;
 }
-
 .thinkingText {
   color: var(--text-muted);
   font-style: italic;
@@ -302,7 +378,6 @@
   animation: dotFade 1.4s ease-in-out infinite;
   color: var(--text-muted);
 }
-
 .thinkingDots span:nth-child(1) {
   animation-delay: 0s;
 }

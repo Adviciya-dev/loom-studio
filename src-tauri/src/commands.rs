@@ -420,19 +420,23 @@ pub fn git_branch_pushed(project_path: String, branch: String) -> bool {
 
 /// Returns true if gh CLI is installed.
 #[tauri::command]
-pub fn gh_check() -> bool {
-    std::process::Command::new("which").arg("gh").output()
+pub async fn gh_check() -> bool {
+    tokio::process::Command::new("which")
+        .arg("gh")
+        .output()
+        .await
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// Returns the default branch name from gh CLI, falling back to "main".
 #[tauri::command]
-pub fn gh_default_branch(project_path: String) -> String {
-    let result = std::process::Command::new("gh")
+pub async fn gh_default_branch(project_path: String) -> String {
+    let result = tokio::process::Command::new("gh")
         .args(["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"])
         .current_dir(&project_path)
-        .output();
+        .output()
+        .await;
     match result {
         Ok(o) if o.status.success() => {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -444,11 +448,12 @@ pub fn gh_default_branch(project_path: String) -> String {
 
 /// Lists open PRs as JSON array.
 #[tauri::command]
-pub fn gh_pr_list(project_path: String) -> Vec<serde_json::Value> {
-    let out = std::process::Command::new("gh")
+pub async fn gh_pr_list(project_path: String) -> Vec<serde_json::Value> {
+    let out = tokio::process::Command::new("gh")
         .args(["pr", "list", "--json", "number,title,headRefName,state,url"])
         .current_dir(&project_path)
-        .output();
+        .output()
+        .await;
     match out {
         Ok(o) if o.status.success() => {
             serde_json::from_slice(&o.stdout).unwrap_or_default()

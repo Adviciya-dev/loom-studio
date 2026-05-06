@@ -27,6 +27,7 @@ export interface Task {
   steps: TaskStep[]
   prompt: string
   filename?: string
+  file_path?: string
   commitHash?: string
 }
 

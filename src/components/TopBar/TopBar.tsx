@@ -1,9 +1,8 @@
 import { useApp } from '@/context/AppContext'
 import ProjectSelector from './ProjectSelector'
-import TaskTabs from './TaskTabs'
 import GitControls from './GitControls'
 import RunControls from './RunControls'
-import WindowControls from './WindowControls'
+import TaskTabs from './TaskTabs'
 import styles from './TopBar.module.css'
 
 function TopBar() {
@@ -12,9 +11,7 @@ function TopBar() {
     state.appMode === 'harness' || state.appMode === 'qa' || state.appMode === 'github'
 
   return (
-    <header className={styles.topBar} data-tauri-drag-region>
-      <WindowControls />
-      <div className={styles.divider} />
+    <header className={styles.topBar}>
       <div className={styles.left}>
         <ProjectSelector />
         {!isHarness && (

@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppProvider, useApp } from '@/context/AppContext'
 import { ErrorBoundary } from '@/ErrorBoundary'
 import { engineCommand } from '@/lib/ipc'
-import type { GhPrItem } from '@/context/types'
 import {
   onProjects,
   onLogLine,
@@ -24,6 +23,7 @@ import {
 import Sidebar from '@/components/Sidebar/Sidebar'
 import TopBar from '@/components/TopBar/TopBar'
 import Workspace from '@/components/Workspace/Workspace'
+import LogPanel from '@/components/Workspace/LogPanel'
 import BottomBar from '@/components/BottomBar/BottomBar'
 import HarnessManager from '@/components/HarnessManager/HarnessManager'
 import GitHubPR from '@/components/GitHubPR/GitHubPR'
@@ -41,17 +41,47 @@ function AppInner() {
   const engineStatusRef = useRef(state.engineStatus)
   engineStatusRef.current = state.engineStatus
 
+  // Generation counter: each effect run gets a unique number. Callbacks check
+  // it before dispatching so stale listeners from a previous run (e.g. React
+  // StrictMode double-invocation) silently discard events rather than causing
+  // duplicate log lines.
+  const genRef = useRef(0)
+
   useEffect(() => {
-    const unlistens = [
-      onProjects((projects) => dispatch({ type: 'SET_PROJECTS', projects })),
+    const myGen = ++genRef.current
+    const unlistens: Array<() => void> = []
 
-      onLogLine((line) => dispatch({ type: 'LOG_APPEND', line })),
+    function onGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
+        e.preventDefault()
+        dispatch({ type: 'OPEN_TASK_MODAL' })
+      }
+    }
+    document.addEventListener('keydown', onGlobalKeyDown)
 
-      onDiffReady((diff) => dispatch({ type: 'SET_PENDING_DIFF', diff })),
+    // Guard: if a stale listener fires after a new effect run has started, ignore it.
+    function guard<T>(cb: (v: T) => void) {
+      return (v: T) => {
+        if (genRef.current === myGen) cb(v)
+      }
+    }
+    function guardVoid(cb: () => void) {
+      return () => {
+        if (genRef.current === myGen) cb()
+      }
+    }
 
-      onEngineStatus((status) => dispatch({ type: 'SET_ENGINE_STATUS', status })),
+    const pending: Array<Promise<() => void>> = [
+      onProjects(guard((projects) => dispatch({ type: 'SET_PROJECTS', projects }))),
+
+      onLogLine(guard((line) => dispatch({ type: 'LOG_APPEND', line }))),
+
+      onDiffReady(guard((diff) => dispatch({ type: 'SET_PENDING_DIFF', diff }))),
+
+      onEngineStatus(guard((status) => dispatch({ type: 'SET_ENGINE_STATUS', status }))),
 
       onTaskComplete((taskId, commitHash) => {
+        if (genRef.current !== myGen) return
         dispatch({ type: 'COMPLETE_TASK', taskId, commitHash })
         dispatch({ type: 'CLEAR_PENDING_DIFF' })
         dispatch({ type: 'SHOW_TOAST', message: 'Task complete — changes committed' })
@@ -63,99 +93,105 @@ function AppInner() {
         }).catch(() => {})
       }),
 
-      onEngineError((message) => {
-        // Missing dependency errors surface as a persistent banner, not log lines.
-        if (message.startsWith('missing_dep:')) {
-          dispatch({ type: 'SET_ENGINE_ERROR', message })
-          return
-        }
-        // Diff extraction errors during awaiting_approval stay in the overlay.
-        if (engineStatusRef.current === 'awaiting_approval' || message.startsWith('diff')) {
-          dispatch({ type: 'SET_DIFF_ERROR', message })
-          return
-        }
-        // SSH auth failure — surface the passphrase prompt in GitControls.
-        if (message.includes('publickey') || message.includes('Permission denied')) {
-          dispatch({ type: 'SET_GIT_SSH_ERROR', value: true })
-        }
-        dispatch({
-          type: 'LOG_APPEND',
-          line: {
-            timestamp: new Date().toLocaleTimeString('en', { hour12: false }),
-            level: 'ERROR',
-            content: message,
-          },
+      onEngineError(
+        guard((message) => {
+          // Missing dependency errors surface as a persistent banner, not log lines.
+          if (message.startsWith('missing_dep:')) {
+            dispatch({ type: 'SET_ENGINE_ERROR', message })
+            return
+          }
+          // Diff extraction errors during awaiting_approval stay in the overlay.
+          if (engineStatusRef.current === 'awaiting_approval' || message.startsWith('diff')) {
+            dispatch({ type: 'SET_DIFF_ERROR', message })
+            return
+          }
+          // SSH auth failure — surface the passphrase prompt in GitControls.
+          if (message.includes('publickey') || message.includes('Permission denied')) {
+            dispatch({ type: 'SET_GIT_SSH_ERROR', value: true })
+          }
+          dispatch({
+            type: 'LOG_APPEND',
+            line: {
+              timestamp: new Date().toLocaleTimeString('en', { hour12: false }),
+              level: 'ERROR',
+              content: message,
+            },
+          })
+          // Don't flip the engine to idle for git remote errors — Claude may still be running.
+          const isGitRemoteError =
+            message.startsWith('Fetch failed:') ||
+            message.startsWith('Pull failed:') ||
+            message.startsWith('Push failed:') ||
+            message.startsWith('SSH unlock failed:')
+          if (!isGitRemoteError) {
+            dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
+          }
         })
-        // Don't flip the engine to idle for git remote errors — Claude may still be running.
-        const isGitRemoteError =
-          message.startsWith('Fetch failed:') ||
-          message.startsWith('Pull failed:') ||
-          message.startsWith('Push failed:') ||
-          message.startsWith('SSH unlock failed:')
-        if (!isGitRemoteError) {
-          dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
-        }
-      }),
-
-      onStoreReset(() => {
-        dispatch({
-          type: 'SHOW_TOAST',
-          message: 'Settings reset — previous state could not be read',
-        })
-      }),
-
-      onGitInfo(({ branch, branches }) => dispatch({ type: 'SET_GIT_INFO', branch, branches })),
-
-      onGitCommitted(({ hash }) =>
-        dispatch({ type: 'SHOW_TOAST', message: `Committed ${hash.slice(0, 7)}` })
       ),
 
-      onGitRemoteInfo(({ url, ahead, behind }) =>
-        dispatch({ type: 'SET_GIT_REMOTE_INFO', url, ahead, behind })
+      onStoreReset(
+        guardVoid(() => {
+          dispatch({
+            type: 'SHOW_TOAST',
+            message: 'Settings reset — previous state could not be read',
+          })
+        })
       ),
 
-      onSshUnlocked(() => dispatch({ type: 'SET_GIT_SSH_ERROR', value: false })),
+      onGitInfo(
+        guard(({ branch, branches }) => dispatch({ type: 'SET_GIT_INFO', branch, branches }))
+      ),
 
-      onTestStatus((testId, status) => dispatch({ type: 'SET_TEST_STATUS', testId, status })),
+      onGitCommitted(
+        guard(({ hash }) =>
+          dispatch({ type: 'SHOW_TOAST', message: `Committed ${hash.slice(0, 7)}` })
+        )
+      ),
 
-      onTestRunStarted(() => dispatch({ type: 'SET_IS_RUNNING_TESTS', value: true })),
+      onGitRemoteInfo(
+        guard(({ url, ahead, behind }) =>
+          dispatch({ type: 'SET_GIT_REMOTE_INFO', url, ahead, behind })
+        )
+      ),
 
-      onTestRunComplete((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result })),
+      onSshUnlocked(guardVoid(() => dispatch({ type: 'SET_GIT_SSH_ERROR', value: false }))),
+
+      onTestStatus((testId, status) => {
+        if (genRef.current !== myGen) return
+        dispatch({ type: 'SET_TEST_STATUS', testId, status })
+      }),
+
+      onTestRunStarted(guardVoid(() => dispatch({ type: 'SET_IS_RUNNING_TESTS', value: true }))),
+
+      onTestRunComplete(guard((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result }))),
 
       ...(import.meta.env.DEV
-        ? [onEngineReady(() => console.log('[loom] engine ready'))] // eslint-disable-line no-console
+        ? [onEngineReady(guardVoid(() => console.log('[loom] engine ready')))] // eslint-disable-line no-console
         : []),
     ]
 
+    pending.forEach((p) =>
+      p.then((fn) => {
+        if (genRef.current === myGen) unlistens.push(fn)
+        else fn() // stale generation — unlisten immediately
+      })
+    )
+
     engineCommand({ action: 'get_projects' }).catch(() => {})
 
-    // Cmd+T / Ctrl+T opens the task select modal.
-    function onGlobalKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 't') {
-        e.preventDefault()
-        dispatch({ type: 'OPEN_TASK_MODAL' })
-      }
-    }
-    document.addEventListener('keydown', onGlobalKeyDown)
-
     return () => {
-      unlistens.forEach((p) => p.then((fn) => fn()))
+      genRef.current = myGen + 1 // invalidate myGen — all callbacks from this run become stale
+      unlistens.forEach((fn) => fn())
       document.removeEventListener('keydown', onGlobalKeyDown)
     }
   }, [dispatch])
 
-  // Prefetch GitHub data whenever the active project changes so PR section opens instantly
+  // Only check gh availability on project change — default branch and PR list
+  // load lazily inside GitHubPR when the user opens that tab.
   useEffect(() => {
     if (!state.activeProject) return
-    const path = state.activeProject.path
     invoke<boolean>('gh_check')
       .then((available) => dispatch({ type: 'SET_GH_AVAILABLE', available }))
-      .catch(() => {})
-    invoke<string>('gh_default_branch', { projectPath: path })
-      .then((branch) => dispatch({ type: 'SET_GH_DEFAULT_BRANCH', branch }))
-      .catch(() => {})
-    invoke<GhPrItem[]>('gh_pr_list', { projectPath: path })
-      .then((prs) => dispatch({ type: 'SET_GH_OPEN_PRS', prs }))
       .catch(() => {})
   }, [state.activeProject?.id, dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -165,18 +201,19 @@ function AppInner() {
       <div className={styles.main}>
         <ErrorBanner />
         <TopBar />
-        {state.appMode === 'harness' ? (
-          <HarnessManager />
-        ) : state.appMode === 'github' ? (
-          <GitHubPR />
-        ) : state.appMode === 'qa' ? (
-          <QATestSuite />
-        ) : (
-          <>
+        <div className={styles.content}>
+          {state.appMode === 'harness' ? (
+            <HarnessManager />
+          ) : state.appMode === 'github' ? (
+            <GitHubPR />
+          ) : state.appMode === 'qa' ? (
+            <QATestSuite />
+          ) : (
             <Workspace />
-            <BottomBar />
-          </>
-        )}
+          )}
+        </div>
+        <LogPanel />
+        <BottomBar />
       </div>
       <TaskSelectModal />
       <DiffOverlay />

@@ -4,29 +4,9 @@ import styles from './RunControls.module.css'
 
 function RunControls() {
   const { state, dispatch } = useApp()
-  const { engineStatus, activeTasks, activeTaskIndex, activeProject } = state
-  const activeTask = activeTasks[activeTaskIndex] ?? null
-
-  const isCompleted = activeTask?.status === 'completed'
-  const canRun =
-    activeTask !== null && activeProject !== null && engineStatus === 'idle' && !isCompleted
+  const { engineStatus } = state
   const isRunning = engineStatus === 'running'
   const isPaused = engineStatus === 'paused'
-
-  async function handleRun() {
-    if (!activeTask || !activeProject) return
-    dispatch({ type: 'LOG_CLEAR' })
-    dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
-    await engineCommand({
-      action: 'start',
-      task_id: activeTask.id,
-      task_title: activeTask.title,
-      prompt: activeTask.prompt,
-      project_path: activeProject.path,
-    }).catch(() => {
-      dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
-    })
-  }
 
   async function handlePause() {
     dispatch({ type: 'SET_ENGINE_STATUS', status: 'paused' })
@@ -70,15 +50,8 @@ function RunControls() {
     )
   }
 
-  if (isCompleted) {
-    return <span className={styles.completedLabel}>Completed</span>
-  }
-
-  return (
-    <button className={styles.runBtn} onClick={handleRun} disabled={!canRun}>
-      Run
-    </button>
-  )
+  // Idle: Run button lives in the Workspace right panel
+  return null
 }
 
 export default RunControls
