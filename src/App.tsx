@@ -41,11 +41,14 @@ function AppInner() {
   const engineStatusRef = useRef(state.engineStatus)
   engineStatusRef.current = state.engineStatus
 
+  // Generation counter: each effect run gets a unique number. Callbacks check
+  // it before dispatching so stale listeners from a previous run (e.g. React
+  // StrictMode double-invocation) silently discard events rather than causing
+  // duplicate log lines.
+  const genRef = useRef(0)
+
   useEffect(() => {
-    // `alive` prevents the race where cleanup runs before Promises settle:
-    // cleanup sets alive=false; if a Promise resolves after cleanup it immediately
-    // calls its unlisten fn instead of storing it, so no orphaned listeners exist.
-    let alive = true
+    const myGen = ++genRef.current
     const unlistens: Array<() => void> = []
 
     function onGlobalKeyDown(e: KeyboardEvent) {
@@ -56,16 +59,29 @@ function AppInner() {
     }
     document.addEventListener('keydown', onGlobalKeyDown)
 
+    // Guard: if a stale listener fires after a new effect run has started, ignore it.
+    function guard<T>(cb: (v: T) => void) {
+      return (v: T) => {
+        if (genRef.current === myGen) cb(v)
+      }
+    }
+    function guardVoid(cb: () => void) {
+      return () => {
+        if (genRef.current === myGen) cb()
+      }
+    }
+
     const pending: Array<Promise<() => void>> = [
-      onProjects((projects) => dispatch({ type: 'SET_PROJECTS', projects })),
+      onProjects(guard((projects) => dispatch({ type: 'SET_PROJECTS', projects }))),
 
-      onLogLine((line) => dispatch({ type: 'LOG_APPEND', line })),
+      onLogLine(guard((line) => dispatch({ type: 'LOG_APPEND', line }))),
 
-      onDiffReady((diff) => dispatch({ type: 'SET_PENDING_DIFF', diff })),
+      onDiffReady(guard((diff) => dispatch({ type: 'SET_PENDING_DIFF', diff }))),
 
-      onEngineStatus((status) => dispatch({ type: 'SET_ENGINE_STATUS', status })),
+      onEngineStatus(guard((status) => dispatch({ type: 'SET_ENGINE_STATUS', status }))),
 
       onTaskComplete((taskId, commitHash) => {
+        if (genRef.current !== myGen) return
         dispatch({ type: 'COMPLETE_TASK', taskId, commitHash })
         dispatch({ type: 'CLEAR_PENDING_DIFF' })
         dispatch({ type: 'SHOW_TOAST', message: 'Task complete — changes committed' })
@@ -77,81 +93,94 @@ function AppInner() {
         }).catch(() => {})
       }),
 
-      onEngineError((message) => {
-        // Missing dependency errors surface as a persistent banner, not log lines.
-        if (message.startsWith('missing_dep:')) {
-          dispatch({ type: 'SET_ENGINE_ERROR', message })
-          return
-        }
-        // Diff extraction errors during awaiting_approval stay in the overlay.
-        if (engineStatusRef.current === 'awaiting_approval' || message.startsWith('diff')) {
-          dispatch({ type: 'SET_DIFF_ERROR', message })
-          return
-        }
-        // SSH auth failure — surface the passphrase prompt in GitControls.
-        if (message.includes('publickey') || message.includes('Permission denied')) {
-          dispatch({ type: 'SET_GIT_SSH_ERROR', value: true })
-        }
-        dispatch({
-          type: 'LOG_APPEND',
-          line: {
-            timestamp: new Date().toLocaleTimeString('en', { hour12: false }),
-            level: 'ERROR',
-            content: message,
-          },
+      onEngineError(
+        guard((message) => {
+          // Missing dependency errors surface as a persistent banner, not log lines.
+          if (message.startsWith('missing_dep:')) {
+            dispatch({ type: 'SET_ENGINE_ERROR', message })
+            return
+          }
+          // Diff extraction errors during awaiting_approval stay in the overlay.
+          if (engineStatusRef.current === 'awaiting_approval' || message.startsWith('diff')) {
+            dispatch({ type: 'SET_DIFF_ERROR', message })
+            return
+          }
+          // SSH auth failure — surface the passphrase prompt in GitControls.
+          if (message.includes('publickey') || message.includes('Permission denied')) {
+            dispatch({ type: 'SET_GIT_SSH_ERROR', value: true })
+          }
+          dispatch({
+            type: 'LOG_APPEND',
+            line: {
+              timestamp: new Date().toLocaleTimeString('en', { hour12: false }),
+              level: 'ERROR',
+              content: message,
+            },
+          })
+          // Don't flip the engine to idle for git remote errors — Claude may still be running.
+          const isGitRemoteError =
+            message.startsWith('Fetch failed:') ||
+            message.startsWith('Pull failed:') ||
+            message.startsWith('Push failed:') ||
+            message.startsWith('SSH unlock failed:')
+          if (!isGitRemoteError) {
+            dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
+          }
         })
-        // Don't flip the engine to idle for git remote errors — Claude may still be running.
-        const isGitRemoteError =
-          message.startsWith('Fetch failed:') ||
-          message.startsWith('Pull failed:') ||
-          message.startsWith('Push failed:') ||
-          message.startsWith('SSH unlock failed:')
-        if (!isGitRemoteError) {
-          dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
-        }
-      }),
-
-      onStoreReset(() => {
-        dispatch({
-          type: 'SHOW_TOAST',
-          message: 'Settings reset — previous state could not be read',
-        })
-      }),
-
-      onGitInfo(({ branch, branches }) => dispatch({ type: 'SET_GIT_INFO', branch, branches })),
-
-      onGitCommitted(({ hash }) =>
-        dispatch({ type: 'SHOW_TOAST', message: `Committed ${hash.slice(0, 7)}` })
       ),
 
-      onGitRemoteInfo(({ url, ahead, behind }) =>
-        dispatch({ type: 'SET_GIT_REMOTE_INFO', url, ahead, behind })
+      onStoreReset(
+        guardVoid(() => {
+          dispatch({
+            type: 'SHOW_TOAST',
+            message: 'Settings reset — previous state could not be read',
+          })
+        })
       ),
 
-      onSshUnlocked(() => dispatch({ type: 'SET_GIT_SSH_ERROR', value: false })),
+      onGitInfo(
+        guard(({ branch, branches }) => dispatch({ type: 'SET_GIT_INFO', branch, branches }))
+      ),
 
-      onTestStatus((testId, status) => dispatch({ type: 'SET_TEST_STATUS', testId, status })),
+      onGitCommitted(
+        guard(({ hash }) =>
+          dispatch({ type: 'SHOW_TOAST', message: `Committed ${hash.slice(0, 7)}` })
+        )
+      ),
 
-      onTestRunStarted(() => dispatch({ type: 'SET_IS_RUNNING_TESTS', value: true })),
+      onGitRemoteInfo(
+        guard(({ url, ahead, behind }) =>
+          dispatch({ type: 'SET_GIT_REMOTE_INFO', url, ahead, behind })
+        )
+      ),
 
-      onTestRunComplete((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result })),
+      onSshUnlocked(guardVoid(() => dispatch({ type: 'SET_GIT_SSH_ERROR', value: false }))),
+
+      onTestStatus((testId, status) => {
+        if (genRef.current !== myGen) return
+        dispatch({ type: 'SET_TEST_STATUS', testId, status })
+      }),
+
+      onTestRunStarted(guardVoid(() => dispatch({ type: 'SET_IS_RUNNING_TESTS', value: true }))),
+
+      onTestRunComplete(guard((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result }))),
 
       ...(import.meta.env.DEV
-        ? [onEngineReady(() => console.log('[loom] engine ready'))] // eslint-disable-line no-console
+        ? [onEngineReady(guardVoid(() => console.log('[loom] engine ready')))] // eslint-disable-line no-console
         : []),
     ]
 
     pending.forEach((p) =>
       p.then((fn) => {
-        if (alive) unlistens.push(fn)
-        else fn() // cleanup already ran — unlisten immediately
+        if (genRef.current === myGen) unlistens.push(fn)
+        else fn() // stale generation — unlisten immediately
       })
     )
 
     engineCommand({ action: 'get_projects' }).catch(() => {})
 
     return () => {
-      alive = false
+      genRef.current = myGen + 1 // invalidate myGen — all callbacks from this run become stale
       unlistens.forEach((fn) => fn())
       document.removeEventListener('keydown', onGlobalKeyDown)
     }
@@ -183,8 +212,8 @@ function AppInner() {
             <Workspace />
           )}
         </div>
-        {state.appMode === 'run' && <BottomBar />}
         <LogPanel />
+        <BottomBar />
       </div>
       <TaskSelectModal />
       <DiffOverlay />

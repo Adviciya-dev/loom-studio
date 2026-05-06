@@ -4,34 +4,28 @@ import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import styles from './BottomBar.module.css'
 
-const STATUS_LABEL: Record<string, string> = {
-  idle: 'Idle',
-  running: 'Running',
-  paused: 'Paused',
-  awaiting_approval: 'Awaiting Approval',
-  completed: 'Completed',
-}
-
 function BottomBar() {
   const { state, dispatch } = useApp()
-  const { engineStatus, engineError, activeTasks, activeTaskIndex, activeProject } = state
+  const { engineStatus, activeTasks, activeTaskIndex, activeProject } = state
   const activeTask = activeTasks[activeTaskIndex] ?? null
-  const [customPrompt, setCustomPrompt] = useState('')
+  const [prompt, setPrompt] = useState('')
 
-  const hasError = engineError !== null
-  const canSend =
-    activeTask !== null &&
-    activeProject !== null &&
-    engineStatus === 'idle' &&
-    activeTask.status !== 'completed' &&
-    customPrompt.trim().length > 0
+  const isIdle = engineStatus === 'idle'
+  const hasTask = activeTask !== null && activeProject !== null && activeTask.status !== 'completed'
+  const canSend = hasTask && isIdle && prompt.trim().length > 0
+
+  const placeholder = !activeProject
+    ? 'Open a project to send prompts…'
+    : !hasTask
+      ? 'Select a task to send a prompt…'
+      : engineStatus !== 'idle'
+        ? 'Waiting for Claude to finish…'
+        : 'Message Claude… (↵ to send)'
 
   async function handleSend() {
     if (!canSend || !activeTask || !activeProject) return
-    const combined = customPrompt.trim()
-      ? `${activeTask.prompt}\n\n${customPrompt.trim()}`
-      : activeTask.prompt
-    setCustomPrompt('')
+    const combined = `${activeTask.prompt}\n\n${prompt.trim()}`
+    setPrompt('')
     dispatch({ type: 'LOG_CLEAR' })
     dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
     await engineCommand({
@@ -40,70 +34,46 @@ function BottomBar() {
       task_title: activeTask.title,
       prompt: combined,
       project_path: activeProject.path,
-    }).catch(() => {
-      dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' })
-    })
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') handleSend()
+    }).catch(() => dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' }))
   }
 
   async function handleAttach() {
     const path = await invoke<string | null>('open_file_picker').catch(() => null)
-    if (path) {
-      setCustomPrompt((prev) => prev + (prev.trim() ? ' ' : '') + `[file: ${path}]`)
-    }
+    if (path) setPrompt((p) => p + (p.trim() ? ' ' : '') + `[file: ${path}]`)
   }
 
-  const pillClass = [
-    styles.pill,
-    engineStatus === 'running' ? styles.pillRunning : '',
-    engineStatus === 'paused' ? styles.pillPaused : '',
-    engineStatus === 'awaiting_approval' ? styles.pillAwaiting : '',
-    engineStatus === 'completed' ? styles.pillCompleted : '',
-    hasError ? styles.pillError : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-
   return (
-    <div className={styles.bottomBar}>
+    <div className={styles.bar}>
+      <span className={styles.chevron}>›</span>
+      <input
+        className={styles.input}
+        type="text"
+        placeholder={placeholder}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        aria-label="Prompt"
+        spellCheck={false}
+      />
       <button
         className={styles.attachBtn}
         onClick={handleAttach}
-        title="Attach file path to prompt"
-        disabled={engineStatus !== 'idle' || !activeTask || activeTask.status === 'completed'}
+        disabled={!isIdle || !hasTask}
+        title="Attach file"
+        tabIndex={-1}
       >
         📎
       </button>
-      <input
-        className={styles.promptInput}
-        type="text"
-        placeholder="Add a custom prompt or context…"
-        value={customPrompt}
-        onChange={(e) => setCustomPrompt(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={engineStatus !== 'idle' || !activeTask || activeTask.status === 'completed'}
-        aria-label="Custom prompt"
-      />
-      <button
-        className={styles.sendBtn}
-        onClick={handleSend}
-        disabled={!canSend}
-        title={canSend ? 'Send custom prompt (Enter)' : 'Select an idle task to send a prompt'}
-      >
-        Send
-      </button>
-      <div className={styles.statusPills}>
-        <span
-          className={pillClass}
-          aria-live="polite"
-          aria-label={`Engine status: ${hasError ? 'Error' : (STATUS_LABEL[engineStatus] ?? engineStatus)}`}
+      {prompt.trim().length > 0 && (
+        <button
+          className={styles.sendBtn}
+          onClick={handleSend}
+          disabled={!canSend}
+          title="Send (Enter)"
         >
-          {hasError ? 'Error' : (STATUS_LABEL[engineStatus] ?? engineStatus)}
-        </span>
-      </div>
+          ↵
+        </button>
+      )}
     </div>
   )
 }

@@ -13,9 +13,6 @@ const STATUS_FILTERS: Array<{ value: TaskStatus | 'all'; label: string }> = [
   { value: 'completed', label: 'Done' },
 ]
 
-const ITEM_H = 40
-const OVERSCAN = 8
-
 function dotClass(status: TaskStatus | undefined): string {
   if (status === 'in-progress') return `${styles.dot} ${styles.dotRunning}`
   if (status === 'completed') return `${styles.dot} ${styles.dotDone}`
@@ -49,19 +46,12 @@ function Workspace() {
   const [taskContent, setTaskContent] = useState('')
   const [contentLoading, setContentLoading] = useState(false)
 
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
   const listRef = useRef<HTMLDivElement>(null)
   const selectedItemRef = useRef<HTMLButtonElement>(null)
-  const [listScrollTop, setListScrollTop] = useState(0)
-  const [listHeight, setListHeight] = useState(500)
-
-  // Track list container height for virtualization
-  useEffect(() => {
-    const el = listRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setListHeight(el.clientHeight))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   // Load all tasks whenever the active project changes
   useEffect(() => {
@@ -71,12 +61,23 @@ function Workspace() {
     setLoading(true)
     setAllTasks([])
     setSelectedId(null)
-    setListScrollTop(0)
 
+    // Use a flag so only the FIRST tasks response after our get_tasks is used.
+    // This prevents TaskSelectModal's concurrent get_tasks from overwriting our list
+    // with potentially different data and causing duplicates.
+    let gotFirstResponse = false
     engineCommand({ action: 'get_tasks', path: activeProject.path + '/harness' }).catch(() => {})
     onTasks((received) => {
       if (!alive) return
-      setAllTasks(received ?? [])
+      if (gotFirstResponse) return
+      gotFirstResponse = true
+      const seen = new Set<string>()
+      const unique = (received ?? []).filter((t) => {
+        if (seen.has(t.id)) return false
+        seen.add(t.id)
+        return true
+      })
+      setAllTasks(unique)
       setLoading(false)
       requestAnimationFrame(() => {
         if (listRef.current) listRef.current.scrollTop = 0
@@ -89,24 +90,22 @@ function Workspace() {
     }
   }, [activeProject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Only pull commitHash from the live session — status comes from the file
-  const tasks = allTasks.map((t) => {
-    const live = activeTasks.find((a) => a.id === t.id)
-    return live?.commitHash ? { ...t, commitHash: live.commitHash } : t
-  })
+  // Only pull commitHash from the live session — status comes from the file.
+  // De-duplicate by ID a second time in case multiple onTasks events race.
+  const seenIds = new Set<string>()
+  const tasks = allTasks
+    .filter((t) => {
+      if (seenIds.has(t.id)) return false
+      seenIds.add(t.id)
+      return true
+    })
+    .map((t) => {
+      const live = activeTasks.find((a) => a.id === t.id)
+      return live?.commitHash ? { ...t, commitHash: live.commitHash } : t
+    })
 
   const filtered =
     filter === 'all' ? tasks : tasks.filter((t) => (t.status ?? 'pending') === filter)
-
-  // Virtual list window
-  const firstVisible = Math.max(0, Math.floor(listScrollTop / ITEM_H) - OVERSCAN)
-  const lastVisible = Math.min(
-    filtered.length - 1,
-    Math.ceil((listScrollTop + listHeight) / ITEM_H) + OVERSCAN
-  )
-  const topPad = firstVisible * ITEM_H
-  const bottomPad = Math.max(0, (filtered.length - 1 - lastVisible) * ITEM_H)
-  const visibleItems = filtered.slice(firstVisible, lastVisible + 1)
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null
 
@@ -120,6 +119,8 @@ function Workspace() {
       if (selectedId === task.id) return
       setSelectedId(task.id)
       setTaskContent('')
+      setIsEditing(false)
+      setEditContent('')
 
       const existingIdx = activeTasks.findIndex((a) => a.id === task.id)
       if (existingIdx >= 0) {
@@ -168,6 +169,38 @@ function Workspace() {
     }).catch(() => dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' }))
   }
 
+  const isDirty = isEditing && editContent !== taskContent
+
+  function handleStartEdit() {
+    setEditContent(taskContent)
+    setIsEditing(true)
+  }
+
+  function handleCancelEdit() {
+    setIsEditing(false)
+    setEditContent(taskContent)
+  }
+
+  async function handleSave() {
+    if (!selectedTask || !activeProject || !isDirty) return
+    const absPath = selectedTask.file_path
+      ? `${activeProject.path}/${selectedTask.file_path}`
+      : selectedTask.filename
+        ? `${activeProject.path}/harness/tasks/${selectedTask.filename}`
+        : null
+    if (!absPath) return
+    setSaving(true)
+    try {
+      await invoke('write_file_content', { path: absPath, content: editContent })
+      setTaskContent(editContent)
+      setIsEditing(false)
+    } catch {
+      // keep editing state open so user doesn't lose changes
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!activeProject) {
     return (
       <div className={styles.empty}>
@@ -196,18 +229,17 @@ function Workspace() {
             <button
               key={f.value}
               className={`${styles.chip} ${filter === f.value ? styles.chipActive : ''}`}
-              onClick={() => setFilter(f.value)}
+              onClick={() => {
+                setFilter(f.value)
+                if (listRef.current) listRef.current.scrollTop = 0
+              }}
             >
               {f.label}
             </button>
           ))}
         </div>
 
-        <div
-          className={styles.list}
-          ref={listRef}
-          onScroll={(e) => setListScrollTop(e.currentTarget.scrollTop)}
-        >
+        <div className={styles.list} ref={listRef}>
           {loading ? (
             <SkeletonRows />
           ) : tasks.length === 0 ? (
@@ -222,30 +254,25 @@ function Workspace() {
               <p>No {filter !== 'all' ? filter : ''} tasks.</p>
             </div>
           ) : (
-            <>
-              {topPad > 0 && <div style={{ height: topPad }} />}
-              {visibleItems.map((task) => {
-                const st = task.status ?? 'pending'
-                const isSelected = selectedId === task.id
-                return (
-                  <button
-                    key={task.id}
-                    ref={isSelected ? selectedItemRef : null}
-                    className={`${styles.listItem} ${isSelected ? styles.listItemActive : ''}`}
-                    style={{ height: ITEM_H }}
-                    onClick={() => handleSelectTask(task)}
-                  >
-                    <span className={dotClass(task.status)} />
-                    <span className={styles.itemId}>{task.id}</span>
-                    <span className={styles.itemTitle}>{task.title}</span>
-                    <span className={`${styles.statusPill} ${styles[`pill_${st}`]}`}>
-                      {st === 'in-progress' ? 'Active' : st === 'completed' ? 'Done' : 'Pending'}
-                    </span>
-                  </button>
-                )
-              })}
-              {bottomPad > 0 && <div style={{ height: bottomPad }} />}
-            </>
+            filtered.map((task) => {
+              const st = task.status ?? 'pending'
+              const isSelected = selectedId === task.id
+              return (
+                <button
+                  key={task.id}
+                  ref={isSelected ? selectedItemRef : null}
+                  className={`${styles.listItem} ${isSelected ? styles.listItemActive : ''}`}
+                  onClick={() => handleSelectTask(task)}
+                >
+                  <span className={dotClass(task.status)} />
+                  <span className={styles.itemId}>{task.id}</span>
+                  <span className={styles.itemTitle}>{task.title}</span>
+                  <span className={`${styles.statusPill} ${styles[`pill_${st}`]}`}>
+                    {st === 'in-progress' ? 'Active' : st === 'completed' ? 'Done' : 'Pending'}
+                  </span>
+                </button>
+              )
+            })
           )}
         </div>
       </div>
@@ -265,17 +292,41 @@ function Workspace() {
                 <span className={styles.detailTitle}>{selectedTask.title}</span>
               </div>
 
-              {isRunning ? (
-                <span className={styles.runningBadge}>● Running…</span>
-              ) : isPaused ? (
-                <span className={styles.pausedBadge}>⏸ Paused</span>
-              ) : isCompleted ? (
-                <span className={styles.doneBadge}>✓ Done</span>
-              ) : (
-                <button className={styles.runBtn} onClick={handleRun} disabled={!canRun}>
-                  ▶ Run
-                </button>
-              )}
+              <div className={styles.headerActions}>
+                {isEditing ? (
+                  <>
+                    <button className={styles.btnCancel} onClick={handleCancelEdit}>
+                      Cancel
+                    </button>
+                    <button
+                      className={styles.btnSave}
+                      onClick={handleSave}
+                      disabled={!isDirty || saving}
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {taskContent && !isRunning && !isPaused && (
+                      <button className={styles.btnEdit} onClick={handleStartEdit}>
+                        ✎ Edit
+                      </button>
+                    )}
+                    {isRunning ? (
+                      <span className={styles.runningBadge}>● Running…</span>
+                    ) : isPaused ? (
+                      <span className={styles.pausedBadge}>⏸ Paused</span>
+                    ) : isCompleted ? (
+                      <span className={styles.doneBadge}>✓ Done</span>
+                    ) : (
+                      <button className={styles.runBtn} onClick={handleRun} disabled={!canRun}>
+                        ▶ Run
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             <div className={styles.metaRow}>
@@ -300,7 +351,10 @@ function Workspace() {
             </div>
 
             <div className={styles.rightBody}>
-              <div className={styles.sectionLabel}>Task</div>
+              <div className={styles.sectionLabel}>
+                Task
+                {isDirty && <span className={styles.dirtyDot} title="Unsaved changes" />}
+              </div>
               {contentLoading ? (
                 <div className={styles.contentSkeleton}>
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -311,8 +365,18 @@ function Workspace() {
                     />
                   ))}
                 </div>
+              ) : isEditing ? (
+                <textarea
+                  className={styles.contentEditor}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  spellCheck={false}
+                  autoFocus
+                />
               ) : taskContent ? (
-                <pre className={styles.contentBlock}>{taskContent}</pre>
+                <pre className={styles.contentBlock} onDoubleClick={handleStartEdit}>
+                  {taskContent}
+                </pre>
               ) : (
                 <div className={styles.loadingText}>No content available.</div>
               )}
