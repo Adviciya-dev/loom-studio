@@ -39,12 +39,23 @@
 .left {
   display: flex;
   flex-direction: column;
-  width: 30%;
-  min-width: 210px;
-  max-width: 340px;
-  border-right: 1px solid var(--border);
+  min-width: 160px;
+  max-width: 520px;
   flex-shrink: 0;
   overflow: hidden;
+}
+
+.divider {
+  width: 4px;
+  background: var(--border-subtle);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.divider:hover,
+.divider:active {
+  background: var(--accent);
 }
 
 .leftHeader {

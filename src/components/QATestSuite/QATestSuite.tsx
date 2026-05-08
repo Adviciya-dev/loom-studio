@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
@@ -26,6 +26,35 @@ function QATestSuite() {
   const [contentLoading, setContentLoading] = useState(false)
   const [sending, setSending] = useState(false)
 
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [splitPct, setSplitPct] = useState(() => {
+    const saved = localStorage.getItem('qa-split')
+    return saved ? parseFloat(saved) : 30
+  })
+
+  function onDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    const container = containerRef.current
+    if (!container) return
+    function onMove(me: MouseEvent) {
+      const rect = container!.getBoundingClientRect()
+      const pct = ((me.clientX - rect.left) / rect.width) * 100
+      const clamped = Math.max(18, Math.min(50, pct))
+      setSplitPct(clamped)
+      localStorage.setItem('qa-split', String(clamped))
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   useEffect(() => {
     if (!activeProject) return
     setLoading(true)
@@ -35,12 +64,12 @@ function QATestSuite() {
         dispatch({ type: 'CLEAR_TEST_RESULTS' })
         setSelectedTc(null)
         setTypeFilter(ALL)
+        setIsEditing(false)
       })
       .catch(() => dispatch({ type: 'SET_TEST_CASES', cases: [] }))
       .finally(() => setLoading(false))
   }, [activeProject?.id, dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear `sending` once the engine acknowledges the test is running
   const selectedStatus: TestCaseStatus | 'idle' = selectedTc
     ? (testStatuses[selectedTc.id] ?? 'idle')
     : 'idle'
@@ -54,6 +83,8 @@ function QATestSuite() {
       if (selectedTc?.id === tc.id) return
       setSelectedTc(tc)
       setSending(false)
+      setIsEditing(false)
+      setEditContent('')
       setContentLoading(true)
       try {
         const content = await invoke<string>('read_file_content', { path: tc.file_path })
@@ -83,6 +114,38 @@ function QATestSuite() {
     }).catch(() => setSending(false))
   }, [activeProject, selectedTc, sending, selectedStatus])
 
+  const isDirty = isEditing && editContent !== testContent
+
+  function handleStartEdit() {
+    setEditContent(testContent)
+    setIsEditing(true)
+  }
+
+  function handleCancelEdit() {
+    setIsEditing(false)
+    setEditContent(testContent)
+  }
+
+  async function handleSave() {
+    if (!selectedTc || !isDirty) return
+    setSaving(true)
+    try {
+      await invoke('write_file_content', { path: selectedTc.file_path, content: editContent })
+      setTestContent(editContent)
+      setIsEditing(false)
+      // Reload test cases so updated title/type/priority reflect in the list
+      if (activeProject) {
+        invoke<TestCase[]>('read_test_cases', { path: activeProject.path })
+          .then((cases) => dispatch({ type: 'SET_TEST_CASES', cases }))
+          .catch(() => {})
+      }
+    } catch {
+      // keep edit mode open on failure
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const types = [ALL, ...Array.from(new Set(testCases.map((tc) => tc.type).filter(Boolean)))]
   const filtered = typeFilter === ALL ? testCases : testCases.filter((tc) => tc.type === typeFilter)
 
@@ -105,9 +168,9 @@ function QATestSuite() {
   }
 
   return (
-    <div className={styles.split}>
+    <div className={styles.split} ref={containerRef}>
       {/* ── Left panel ─────────────────────────────────── */}
-      <div className={styles.left}>
+      <div className={styles.left} style={{ width: `${splitPct}%` }}>
         <div className={styles.leftHeader}>
           <span className={styles.leftTitle}>
             Tests
@@ -159,6 +222,8 @@ function QATestSuite() {
         )}
       </div>
 
+      <div className={styles.divider} onMouseDown={onDividerMouseDown} />
+
       {/* ── Right panel ────────────────────────────────── */}
       <div className={styles.right}>
         {!selectedTc ? (
@@ -173,26 +238,48 @@ function QATestSuite() {
                 <span className={styles.detailId}>{selectedTc.id}</span>
                 <span className={styles.detailTitle}>{selectedTc.title}</span>
               </div>
-              {selectedStatus === 'running' ? (
-                <div className={styles.runningControls}>
-                  <span className={styles.runningLabel}>● Claude running…</span>
-                  <button className={styles.btnStop} onClick={handleStop}>
-                    ■ Stop
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className={`${styles.btnGenerate} ${sending ? styles.btnWorking : ''}`}
-                  onClick={handleGenerateAndRun}
-                  disabled={sending}
-                >
-                  {sending ? '⟳ Sending…' : '▶ Generate & Run'}
-                </button>
-              )}
+
+              <div className={styles.headerActions}>
+                {isEditing ? (
+                  <>
+                    <button className={styles.btnCancel} onClick={handleCancelEdit}>
+                      Cancel
+                    </button>
+                    <button
+                      className={styles.btnSave}
+                      onClick={handleSave}
+                      disabled={!isDirty || saving}
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                ) : selectedStatus === 'running' ? (
+                  <div className={styles.runningControls}>
+                    <span className={styles.runningLabel}>● Claude running…</span>
+                    <button className={styles.btnStop} onClick={handleStop}>
+                      ■ Stop
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {testContent && (
+                      <button className={styles.btnEdit} onClick={handleStartEdit}>
+                        ✎ Edit
+                      </button>
+                    )}
+                    <button
+                      className={`${styles.btnGenerate} ${sending ? styles.btnWorking : ''}`}
+                      onClick={handleGenerateAndRun}
+                      disabled={sending}
+                    >
+                      {sending ? '⟳ Sending…' : '▶ Generate & Run'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className={styles.rightBody}>
-              {/* Status badge */}
               {selectedStatus !== 'idle' && (
                 <div className={styles.metaRow}>
                   <span
@@ -210,7 +297,6 @@ function QATestSuite() {
                 </div>
               )}
 
-              {/* Meta */}
               <div className={styles.metaRow}>
                 {selectedTc.type && (
                   <span className={`${styles.badge} ${styles.badgeType}`}>{selectedTc.type}</span>
@@ -227,24 +313,27 @@ function QATestSuite() {
                 )}
               </div>
 
-              {/* Test case content */}
               <div className={styles.section}>
-                <div className={styles.sectionLabel}>Test Case</div>
+                <div className={styles.sectionLabel}>
+                  Test Case
+                  {isDirty && <span className={styles.dirtyDot} title="Unsaved changes" />}
+                </div>
                 {contentLoading ? (
                   <div className={styles.loadingText}>Loading…</div>
+                ) : isEditing ? (
+                  <textarea
+                    className={styles.contentEditor}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    spellCheck={false}
+                    autoFocus
+                  />
                 ) : (
-                  <pre className={styles.contentBlock}>{testContent}</pre>
+                  <pre className={styles.contentBlock} onDoubleClick={handleStartEdit}>
+                    {testContent}
+                  </pre>
                 )}
               </div>
-
-              {/* Idle hint */}
-              {selectedStatus === 'idle' && (
-                <div className={styles.generateHint}>
-                  Click <strong>Generate &amp; Run</strong> — Claude will check prerequisites, write
-                  a Playwright script, and run it. All output streams to the{' '}
-                  <strong>Output panel</strong> below.
-                </div>
-              )}
             </div>
           </>
         )}

@@ -11,6 +11,16 @@ func CommitMessage(taskID, taskTitle string) string {
 	return fmt.Sprintf("feat(loom): [%s] %s", taskID, taskTitle)
 }
 
+// StageFile runs `git add <filePath>` in projectPath. filePath may be relative.
+func StageFile(projectPath, filePath string) error {
+	cmd := exec.Command("git", "add", filePath)
+	cmd.Dir = projectPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add %s: %w — %s", filePath, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // StageAll runs `git add -A` in projectPath.
 func StageAll(projectPath string) error {
 	cmd := exec.Command("git", "add", "-A")

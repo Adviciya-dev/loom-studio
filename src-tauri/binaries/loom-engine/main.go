@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,6 +22,39 @@ import (
 	"github.com/loom/engine/store"
 	"github.com/loom/engine/task"
 )
+
+// expandPath prepends common binary locations that GUI apps miss on macOS/Linux.
+// claude is typically installed via npm/brew into dirs not in the GUI $PATH.
+func expandPath() {
+	home, _ := os.UserHomeDir()
+	extra := []string{
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		"/usr/local/bin",
+		"/usr/local/sbin",
+		filepath.Join(home, ".npm-packages", "bin"),
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, "npm", "bin"),
+		filepath.Join(home, ".yarn", "bin"),
+		"/usr/bin",
+		"/bin",
+	}
+	cur := os.Getenv("PATH")
+	parts := strings.Split(cur, string(os.PathListSeparator))
+	seen := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		seen[p] = true
+	}
+	var add []string
+	for _, p := range extra {
+		if !seen[p] {
+			add = append(add, p)
+		}
+	}
+	if len(add) > 0 {
+		os.Setenv("PATH", strings.Join(add, string(os.PathListSeparator))+string(os.PathListSeparator)+cur)
+	}
+}
 
 // checkDep returns an error message if the named binary is not on PATH.
 func checkDep(name string) string {
@@ -38,6 +72,7 @@ func checkDep(name string) string {
 }
 
 func main() {
+	expandPath()
 	emitter := ipc.NewEmitter(os.Stdout)
 	manager := process.NewManager(emitter)
 
@@ -185,9 +220,16 @@ func main() {
 				branches, _ := git.ListBranches(projectPath)
 				emitter.Emit("git_info", map[string]interface{}{"branch": branch, "branches": branches})
 
-				// Mark the task as in-progress in the file and append a completion
-				// instruction to the prompt so Claude updates it when done.
+				// Mark the task as in-progress in the file and commit that marker
+				// BEFORE Claude runs so it never shows in the diff overlay.
 				if relPath, err := task.MarkTaskStarted(projectPath, taskID); err == nil {
+					if stageErr := git.StageFile(projectPath, relPath); stageErr == nil {
+						if commitErr := git.Commit(projectPath, "chore(loom): start "+taskID); commitErr != nil {
+							emitter.EmitLogLine("warn: could not commit task marker: " + commitErr.Error())
+						}
+					} else {
+						emitter.EmitLogLine("warn: could not stage task marker: " + stageErr.Error())
+					}
 					prompt += "\n\n---\n" +
 						"When you have finished implementing everything above, update the task file at `" + relPath + "`:\n" +
 						"- Set the **Status** field to `✅ Completed`\n" +

@@ -5,7 +5,6 @@ import { ErrorBoundary } from '@/ErrorBoundary'
 import { engineCommand } from '@/lib/ipc'
 import {
   onProjects,
-  onLogLine,
   onTaskComplete,
   onEngineError,
   onEngineReady,
@@ -73,8 +72,6 @@ function AppInner() {
 
     const pending: Array<Promise<() => void>> = [
       onProjects(guard((projects) => dispatch({ type: 'SET_PROJECTS', projects }))),
-
-      onLogLine(guard((line) => dispatch({ type: 'LOG_APPEND', line }))),
 
       onDiffReady(guard((diff) => dispatch({ type: 'SET_PENDING_DIFF', diff }))),
 
