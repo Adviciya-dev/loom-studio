@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
+import { onLogLine, onEngineStatus } from '@/lib/events'
+import type { LogLine } from '@/types'
 import styles from './LogPanel.module.css'
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -162,8 +164,48 @@ function ThinkingIndicator() {
 }
 
 function LogPanel() {
-  const { state, dispatch } = useApp()
-  const { logLines, engineStatus } = state
+  const { state } = useApp()
+  const { engineStatus } = state
+
+  // Local log state — NOT in global context so only LogPanel re-renders on each line.
+  // Lines accumulate in a ref and flush to state via RAF so 100 events/frame = 1 render.
+  const linesRef = useRef<LogLine[]>([])
+  const rafRef = useRef<number | null>(null)
+  const [logLines, setLogLines] = useState<LogLine[]>([])
+
+  function flushLines() {
+    setLogLines([...linesRef.current])
+    rafRef.current = null
+  }
+
+  useEffect(() => {
+    const unlistens: Array<() => void> = []
+
+    onLogLine((line) => {
+      linesRef.current.push(line)
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(flushLines)
+      }
+    }).then((fn) => unlistens.push(fn))
+
+    onEngineStatus((status) => {
+      if (status === 'running') {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
+        linesRef.current = []
+        setLogLines([])
+        setAutoScroll(true)
+        setOpen(true)
+      }
+    }).then((fn) => unlistens.push(fn))
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      unlistens.forEach((fn) => fn())
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [open, setOpen] = useState(true)
   const [panelHeight, setPanelHeight] = useState(DEFAULT_H)
@@ -172,14 +214,6 @@ function LogPanel() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const isRunning = engineStatus === 'running'
   const virtualize = logLines.length > VIRT_THRESHOLD
-
-  // Auto-open when engine starts running
-  useEffect(() => {
-    if (isRunning) {
-      setOpen(true)
-      setAutoScroll(true)
-    }
-  }, [isRunning])
 
   useEffect(() => {
     if (autoScroll && open && bodyRef.current) {
@@ -306,7 +340,10 @@ function LogPanel() {
           {logLines.length > 0 && (
             <button
               className={styles.clearBtn}
-              onClick={() => dispatch({ type: 'LOG_CLEAR' })}
+              onClick={() => {
+                linesRef.current = []
+                setLogLines([])
+              }}
               title="Clear output"
             >
               Clear

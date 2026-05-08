@@ -35,12 +35,43 @@ function findNewFiles(before: Set<string>, after: FileNode): string[] {
   return result
 }
 
+const WRITE_TOOLS = new Set([
+  'write_file',
+  'write',
+  'edit',
+  'multiedit',
+  'str_replace_editor',
+  'str_replace_based_edit',
+])
+
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: string
   createdFiles?: string[]
+  updatedFiles?: string[]
+  duration?: number // ms — total response time
+}
+
+// Typed streaming blocks — one per distinct item type from Claude
+type StreamBlock =
+  | { id: string; kind: 'prose'; text: string }
+  | {
+      id: string
+      kind: 'tool'
+      tool: string
+      arg: string
+      result: string
+      startTime: number
+      duration?: number
+    }
+
+function fmtMs(ms: number): string {
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const m = Math.floor(ms / 60_000)
+  const s = Math.floor((ms % 60_000) / 1000)
+  return `${m}m ${s}s`
 }
 
 interface Props {
@@ -55,40 +86,88 @@ function ts() {
   return new Date().toLocaleTimeString('en', { hour12: false })
 }
 
-function ThinkingBubble({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false)
+const TOOL_ICONS: Record<string, string> = {
+  bash: '»',
+  read: '↳',
+  write: '↳',
+  write_file: '↳',
+  edit: '↳',
+  multiedit: '↳',
+  find: '⌕',
+  grep: '⌕',
+  glob: '⌕',
+  ls: '⌕',
+}
 
-  // Show last meaningful line as a live status hint.
-  const lines = content.split('\n').filter((l) => l.trim())
-  const last = lines[lines.length - 1] ?? 'Working…'
-  const status = last.length > 72 ? last.slice(0, 72) + '…' : last
+function StreamToolBlock({
+  tool,
+  arg,
+  result,
+  duration,
+}: {
+  tool: string
+  arg: string
+  result: string
+  duration?: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const icon = TOOL_ICONS[tool.toLowerCase()] ?? '·'
+  const shortArg = arg.length > 55 ? arg.slice(0, 55) + '…' : arg
 
   return (
-    <div className={styles.thinkingMsg}>
-      <div className={styles.thinkingBubble}>
-        <div className={styles.thinkingHeader}>
-          <div className={styles.thinkingLeft}>
-            <span className={styles.thinkingDots}>
-              <span />
-              <span />
-              <span />
-            </span>
-            <span className={styles.thinkingStatus}>{status}</span>
-          </div>
-          <button
-            className={styles.expandBtn}
-            onClick={() => setExpanded((e) => !e)}
-            title={expanded ? 'Collapse' : 'Show details'}
-          >
-            {expanded ? '▲' : '▼'}
-          </button>
+    <div className={styles.toolBlock}>
+      <button className={styles.toolHeader} onClick={() => setExpanded((e) => !e)}>
+        <span className={styles.toolIcon}>{icon}</span>
+        <span className={styles.toolName}>{tool}</span>
+        {shortArg && <span className={styles.toolArg}>{shortArg}</span>}
+        {duration !== undefined && <span className={styles.toolDuration}>{fmtMs(duration)}</span>}
+        <span className={styles.toolChevron}>{expanded ? '▾' : '▸'}</span>
+      </button>
+      {expanded && result && <pre className={styles.toolResult}>{result}</pre>}
+      {expanded && !result && (
+        <div className={styles.toolResultPending}>
+          <span className={styles.miniDot} />
+          <span className={styles.miniDot} />
+          <span className={styles.miniDot} />
         </div>
-        {expanded && (
-          <div className={styles.thinkingContent}>
-            {content}
-            <span className={styles.cursor} />
-          </div>
-        )}
+      )}
+    </div>
+  )
+}
+
+function StreamProseBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  return (
+    <div className={`${styles.streamProse} ${streaming ? styles.streamProseActive : ''}`}>
+      <span className={styles.streamProseText}>{text}</span>
+      {streaming && <span className={styles.streamCursor} />}
+    </div>
+  )
+}
+
+function FileChipGroup({
+  label,
+  files,
+  chipClass,
+  onOpenFile,
+}: {
+  label: string
+  files: string[]
+  chipClass: string
+  onOpenFile?: (path: string) => void
+}) {
+  return (
+    <div className={styles.createdFiles}>
+      <span className={styles.createdLabel}>{label}</span>
+      <div className={styles.fileChips}>
+        {files.map((f) => {
+          const name = f.split('/').pop() ?? f
+          const rel = f.includes('/harness/') ? f.split('/harness/')[1] : f
+          return (
+            <button key={f} className={chipClass} onClick={() => onOpenFile?.(f)} title={f}>
+              {rel || name}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -97,44 +176,47 @@ function ThinkingBubble({ content }: { content: string }) {
 function AssistantBubble({
   content,
   timestamp,
-  streaming,
   createdFiles,
+  updatedFiles,
   onOpenFile,
+  duration,
 }: {
   content: string
   timestamp: string
-  streaming?: boolean
   createdFiles?: string[]
+  updatedFiles?: string[]
   onOpenFile?: (path: string) => void
+  duration?: number
 }) {
   return (
     <div className={styles.assistantMsg}>
+      <div className={styles.assistantLabel}>
+        <span className={styles.assistantAvatar}>C</span>
+        <span className={styles.assistantName}>Claude</span>
+      </div>
       <div className={styles.assistantBubble}>
         <span className={styles.bubbleContent}>{content || '…'}</span>
-        {streaming && <span className={styles.cursor} />}
       </div>
       {createdFiles && createdFiles.length > 0 && (
-        <div className={styles.createdFiles}>
-          <span className={styles.createdLabel}>📁 Files created</span>
-          <div className={styles.fileChips}>
-            {createdFiles.map((f) => {
-              const name = f.split('/').pop() ?? f
-              const rel = f.includes('/harness/') ? f.split('/harness/')[1] : f
-              return (
-                <button
-                  key={f}
-                  className={styles.fileChip}
-                  onClick={() => onOpenFile?.(f)}
-                  title={f}
-                >
-                  {rel || name}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <FileChipGroup
+          label="📁 Created"
+          files={createdFiles}
+          chipClass={styles.fileChip}
+          onOpenFile={onOpenFile}
+        />
       )}
-      <span className={styles.msgTs}>{timestamp}</span>
+      {updatedFiles && updatedFiles.length > 0 && (
+        <FileChipGroup
+          label="✏️ Updated"
+          files={updatedFiles}
+          chipClass={styles.fileChipUpdated}
+          onOpenFile={onOpenFile}
+        />
+      )}
+      <span className={styles.msgTs}>
+        {timestamp}
+        {duration !== undefined && <span className={styles.durationBadge}>{fmtMs(duration)}</span>}
+      </span>
     </div>
   )
 }
@@ -164,16 +246,20 @@ function ChatPanel({
   const [newTplLabel, setNewTplLabel] = useState('')
   const [newTplPrompt, setNewTplPrompt] = useState('')
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  // Streaming content lives in a ref + mirrored to state for rendering.
-  // This avoids the race condition where events arrive before React commits state.
-  const [streamingContent, setStreamingContent] = useState<string | null>(null)
-  const streamRef = useRef('')
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Rich streaming state: typed blocks instead of a single string
+  const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([])
+  const isStreamingRef = useRef(false)
+
+  // Timing
+  const sendTimeRef = useRef<number>(0)
+  const [elapsed, setElapsed] = useState(0)
+
   const listRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const beforeSnapshotRef = useRef<Set<string>>(new Set())
+  const touchedFilesRef = useRef<Set<string>>(new Set())
   const [modalPath, setModalPath] = useState<string | null>(null)
-  // Refs so the listener effect doesn't need these as deps (avoids re-registration).
   const projectPathRef = useRef(projectPath)
   projectPathRef.current = projectPath
   const onFileChangeRef = useRef(onFileChange)
@@ -183,12 +269,19 @@ function ChatPanel({
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
-  }, [messages, streamingContent])
+  }, [messages, streamBlocks])
 
-  // Register Tauri event listeners with proper async pattern.
+  // Live elapsed timer — updates every 100ms while Claude is working
   useEffect(() => {
-    // Use a `cancelled` flag instead of `mounted` so the Promise.then()
-    // handler correctly handles React StrictMode's double-invoke of effects.
+    if (!sending) {
+      setElapsed(0)
+      return
+    }
+    const id = setInterval(() => setElapsed(Date.now() - sendTimeRef.current), 100)
+    return () => clearInterval(id)
+  }, [sending])
+
+  useEffect(() => {
     let cancelled = false
     let cleanupFns: Array<() => void> = []
 
@@ -200,85 +293,115 @@ function ChatPanel({
       }),
 
       onHarnessLogLine((line) => {
-        streamRef.current = streamRef.current
-          ? streamRef.current + '\n' + line.content
-          : line.content
-        if (!flushTimerRef.current) {
-          flushTimerRef.current = setTimeout(() => {
-            setStreamingContent(streamRef.current)
-            flushTimerRef.current = null
-          }, 30)
+        if (cancelled) return
+        const kind = line.kind ?? 'prose'
+
+        if (kind === 'prose') {
+          setStreamBlocks((prev) => {
+            const last = prev[prev.length - 1]
+            if (last?.kind === 'prose') {
+              return [...prev.slice(0, -1), { ...last, text: last.text + '\n' + line.content }]
+            }
+            return [...prev, { id: crypto.randomUUID(), kind: 'prose', text: line.content }]
+          })
+        } else if (kind === 'tool') {
+          const match = line.content.match(/^\[tool:\s*([^\]]+)\]\s*(.*)$/)
+          const tool = match?.[1]?.trim() ?? 'unknown'
+          const arg = match?.[2]?.trim() ?? ''
+          if (WRITE_TOOLS.has(tool.toLowerCase()) && arg) {
+            touchedFilesRef.current.add(arg)
+          }
+          setStreamBlocks((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), kind: 'tool', tool, arg, result: '', startTime: Date.now() },
+          ])
+        } else if (kind === 'result') {
+          setStreamBlocks((prev) => {
+            const last = prev[prev.length - 1]
+            if (last?.kind === 'tool') {
+              const newResult = last.result ? last.result + '\n' + line.content : line.content
+              // Record duration only on first result line
+              const duration =
+                last.duration !== undefined ? last.duration : Date.now() - last.startTime
+              return [...prev.slice(0, -1), { ...last, result: newResult, duration }]
+            }
+            return prev
+          })
         }
       }),
 
       onHarnessDone(() => {
-        if (flushTimerRef.current) {
-          clearTimeout(flushTimerRef.current)
-          flushTimerRef.current = null
-        }
-        const content = streamRef.current
-        streamRef.current = ''
-        setStreamingContent(null)
+        if (cancelled) return
+        isStreamingRef.current = false
+        const duration = Date.now() - sendTimeRef.current
+        const touched = new Set(touchedFilesRef.current)
 
-        // Diff file tree to find files Claude created during this response.
-        const snapshot = beforeSnapshotRef.current
-        invoke<FileNode>('read_directory', { path: projectPathRef.current })
-          .then((tree) => {
-            const newFiles = findNewFiles(snapshot, tree)
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                content: content || '…',
-                timestamp: ts(),
-                createdFiles: newFiles.length > 0 ? newFiles : undefined,
-              },
-            ])
-          })
-          .catch(() => {
-            if (content) {
-              setMessages((prev) => [
-                ...prev,
-                { id: crypto.randomUUID(), role: 'assistant', content, timestamp: ts() },
+        setStreamBlocks((prev) => {
+          const prose = prev
+            .filter((b) => b.kind === 'prose')
+            .map((b) => (b as { kind: 'prose'; text: string }).text)
+            .join('\n\n')
+
+          invoke<FileNode>('read_directory', { path: projectPathRef.current })
+            .then((tree) => {
+              const newFiles = findNewFiles(beforeSnapshotRef.current, tree)
+              const newFileSet = new Set(newFiles)
+              const updatedFiles = [...touched].filter(
+                (p) => beforeSnapshotRef.current.has(p) && !newFileSet.has(p)
+              )
+              setMessages((msgs) => [
+                ...msgs,
+                {
+                  id: crypto.randomUUID(),
+                  role: 'assistant',
+                  content: prose || '…',
+                  timestamp: ts(),
+                  duration,
+                  createdFiles: newFiles.length > 0 ? newFiles : undefined,
+                  updatedFiles: updatedFiles.length > 0 ? updatedFiles : undefined,
+                },
               ])
-            }
-          })
+            })
+            .catch(() => {
+              const updatedFiles = [...touched].filter((p) => beforeSnapshotRef.current.has(p))
+              setMessages((msgs) => [
+                ...msgs,
+                {
+                  id: crypto.randomUUID(),
+                  role: 'assistant',
+                  content: prose || '…',
+                  timestamp: ts(),
+                  duration,
+                  updatedFiles: updatedFiles.length > 0 ? updatedFiles : undefined,
+                },
+              ])
+            })
 
-        setSending(false)
-        onFileChangeRef.current?.()
+          setSending(false)
+          onFileChangeRef.current?.()
+          return []
+        })
       }),
 
       onEngineError((msg) => {
+        if (cancelled) return
         if (!msg.startsWith('missing_dep:')) {
-          if (flushTimerRef.current) {
-            clearTimeout(flushTimerRef.current)
-            flushTimerRef.current = null
-          }
-          streamRef.current = ''
-          setStreamingContent(null)
+          isStreamingRef.current = false
+          setStreamBlocks([])
           setSending(false)
         }
       }),
     ]).then((fns) => {
-      if (cancelled) {
-        fns.forEach((fn) => fn())
-      } else {
-        cleanupFns = fns
-      }
+      if (cancelled) fns.forEach((fn) => fn())
+      else cleanupFns = fns
     })
 
     return () => {
       cancelled = true
       cleanupFns.forEach((fn) => fn())
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-      }
     }
   }, [dispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Consume file path attached from the FileModal.
   useEffect(() => {
     if (!pendingAttach) return
     setInput((prev) => prev + (prev.trim() ? '\n' : '') + `[file: ${pendingAttach}]`)
@@ -298,8 +421,6 @@ function ChatPanel({
       }
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
 
-      streamRef.current = ''
-      // Snapshot current file tree so we can diff after Claude responds.
       invoke<FileNode>('read_directory', { path: projectPath })
         .then((tree) => {
           const paths = new Set<string>()
@@ -309,8 +430,13 @@ function ChatPanel({
         .catch(() => {
           beforeSnapshotRef.current = new Set()
         })
+
+      sendTimeRef.current = Date.now()
+      setElapsed(0)
       setMessages((prev) => [...prev, userMsg])
-      setStreamingContent('')
+      setStreamBlocks([])
+      touchedFilesRef.current = new Set()
+      isStreamingRef.current = true
       setInput('')
       setSending(true)
 
@@ -321,8 +447,8 @@ function ChatPanel({
         model,
       }).catch(() => {
         setSending(false)
-        setStreamingContent(null)
-        streamRef.current = ''
+        isStreamingRef.current = false
+        setStreamBlocks([])
       })
     },
     [messages, sending, projectPath, model]
@@ -357,6 +483,7 @@ function ChatPanel({
     { id: '_task', label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
     { id: '_test', label: '🧪 Test Cases', prompt: TEST_CASE_PROMPT(projectName) },
   ]
+
   function openAddTemplate() {
     setEditingTemplateId(null)
     setNewTplLabel('')
@@ -392,18 +519,19 @@ function ChatPanel({
     await engineCommand({ action: 'delete_template', id }).catch(() => {})
   }
 
+  const isStreaming = streamBlocks.length > 0
+
   return (
     <>
       <div className={styles.panel}>
         <div className={styles.header}>
           <span className={styles.title}>Claude Chat</span>
-          {(messages.length > 0 || streamingContent !== null) && (
+          {(messages.length > 0 || sending) && (
             <button
               className={styles.clearBtn}
               onClick={() => {
                 setMessages([])
-                setStreamingContent(null)
-                streamRef.current = ''
+                setStreamBlocks([])
               }}
             >
               Clear
@@ -412,7 +540,7 @@ function ChatPanel({
         </div>
 
         <div className={styles.messages} ref={listRef}>
-          {messages.length === 0 && streamingContent === null && (
+          {messages.length === 0 && !sending && (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>⎇</div>
               <p className={styles.emptyTitle}>Harness Assistant</p>
@@ -422,6 +550,7 @@ function ChatPanel({
               </p>
             </div>
           )}
+
           {messages.map((msg) =>
             msg.role === 'user' ? (
               <UserBubble key={msg.id} msg={msg} />
@@ -431,11 +560,51 @@ function ChatPanel({
                 content={msg.content}
                 timestamp={msg.timestamp}
                 createdFiles={msg.createdFiles}
+                updatedFiles={msg.updatedFiles}
                 onOpenFile={setModalPath}
+                duration={msg.duration}
               />
             )
           )}
-          {streamingContent !== null && <ThinkingBubble content={streamingContent} />}
+
+          {/* Live streaming blocks — shown immediately on send, before first block arrives */}
+          {sending && (
+            <div className={styles.streamContainer}>
+              <div className={styles.streamHeader}>
+                <span className={styles.streamDot} />
+                <span className={styles.streamLabel}>Claude</span>
+                <span className={styles.streamTimer}>{fmtMs(elapsed)}</span>
+              </div>
+              {!isStreaming && (
+                <div className={styles.thinkingRow}>
+                  <span className={styles.miniDot} />
+                  <span className={styles.miniDot} />
+                  <span className={styles.miniDot} />
+                </div>
+              )}
+              {streamBlocks.map((block, i) => {
+                const isLast = i === streamBlocks.length - 1
+                if (block.kind === 'prose') {
+                  return (
+                    <StreamProseBlock
+                      key={block.id}
+                      text={block.text}
+                      streaming={isLast && sending}
+                    />
+                  )
+                }
+                return (
+                  <StreamToolBlock
+                    key={block.id}
+                    tool={block.tool}
+                    arg={block.arg}
+                    result={block.result}
+                    duration={block.duration}
+                  />
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <div className={styles.quickActions}>

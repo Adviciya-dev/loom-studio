@@ -26,7 +26,6 @@ function BottomBar() {
     if (!canSend || !activeTask || !activeProject) return
     const combined = `${activeTask.prompt}\n\n${prompt.trim()}`
     setPrompt('')
-    dispatch({ type: 'LOG_CLEAR' })
     dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
     await engineCommand({
       action: 'start',

@@ -21,6 +21,7 @@ type LogLine struct {
 	Timestamp string `json:"timestamp"`
 	Level     string `json:"level"`
 	Content   string `json:"content"`
+	Kind      string `json:"kind,omitempty"` // harness only: "prose" | "tool" | "result"
 }
 
 // DetectLevel infers a log level from the line content.

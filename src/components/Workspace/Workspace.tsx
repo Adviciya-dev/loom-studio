@@ -52,6 +52,30 @@ function Workspace() {
 
   const listRef = useRef<HTMLDivElement>(null)
   const selectedItemRef = useRef<HTMLButtonElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [splitPct, setSplitPct] = useState(() => {
+    const saved = localStorage.getItem('workspace-split')
+    return saved ? parseFloat(saved) : 30
+  })
+
+  function onDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    const container = containerRef.current
+    if (!container) return
+    function onMove(me: MouseEvent) {
+      const rect = container!.getBoundingClientRect()
+      const pct = ((me.clientX - rect.left) / rect.width) * 100
+      const clamped = Math.max(18, Math.min(50, pct))
+      setSplitPct(clamped)
+      localStorage.setItem('workspace-split', String(clamped))
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   // Load all tasks whenever the active project changes
   useEffect(() => {
@@ -114,6 +138,14 @@ function Workspace() {
     selectedItemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [selectedId])
 
+  // When the user clicks a TaskTab in the TopBar, sync the right panel to that task
+  const activeTabTaskId = activeTasks[activeTaskIndex]?.id
+  useEffect(() => {
+    if (!activeTabTaskId || activeTabTaskId === selectedId) return
+    const task = allTasks.find((t) => t.id === activeTabTaskId)
+    if (task) handleSelectTask(task)
+  }, [activeTabTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSelectTask = useCallback(
     async (task: Task) => {
       if (selectedId === task.id) return
@@ -158,7 +190,6 @@ function Workspace() {
 
   async function handleRun() {
     if (!canRun || !selectedTask || !activeProject) return
-    dispatch({ type: 'LOG_CLEAR' })
     dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
     await engineCommand({
       action: 'start',
@@ -211,9 +242,9 @@ function Workspace() {
   }
 
   return (
-    <div className={styles.split}>
+    <div className={styles.split} ref={containerRef}>
       {/* ── Left panel — task list ──────────────────────── */}
-      <div className={styles.left}>
+      <div className={styles.left} style={{ width: `${splitPct}%` }}>
         <div className={styles.leftHeader}>
           <span className={styles.leftTitle}>
             Tasks
@@ -276,6 +307,8 @@ function Workspace() {
           )}
         </div>
       </div>
+
+      <div className={styles.divider} onMouseDown={onDividerMouseDown} />
 
       {/* ── Right panel — task detail ───────────────────── */}
       <div className={styles.right}>

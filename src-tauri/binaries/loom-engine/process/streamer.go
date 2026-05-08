@@ -254,8 +254,12 @@ func parseStreamLine(line string) (items []outputItem, pendingOp *PendingOp, com
 	}
 }
 
-// StreamHarness reads stdout/stderr and emits harness_log_line events for Claude
-// prose — used by the Harness Manager chat panel (same infrastructure as Stream).
+// StreamHarness reads stdout/stderr and emits structured harness_log_line events:
+//   - "prose"  — Claude's own text response
+//   - "tool"   — tool_use call ([tool: name] arg)
+//   - "result" — tool_result content
+//
+// Used by the Harness Manager chat panel for a rich streaming UX.
 func (s *Streamer) StreamHarness(emitter *ipc.Emitter) {
 	const maxScanToken = 1024 * 1024
 
@@ -273,12 +277,27 @@ func (s *Streamer) StreamHarness(emitter *ipc.Emitter) {
 			}
 			items, _, _ := parseStreamLine(line)
 			for _, item := range items {
-				if !item.isClaude {
-					continue // skip tool labels and tool results
+				text := strings.TrimSpace(item.text)
+				if text == "" {
+					continue
 				}
-				for _, part := range strings.Split(item.text, "\n") {
-					if p := strings.TrimSpace(part); p != "" {
-						emitter.EmitHarnessLogLine(p)
+				if item.isClaude {
+					// Claude's prose — emit each paragraph line as "prose"
+					for _, part := range strings.Split(text, "\n") {
+						if p := strings.TrimSpace(part); p != "" {
+							emitter.EmitHarnessLine("prose", p)
+						}
+					}
+				} else if strings.HasPrefix(text, "[tool:") {
+					// Tool call — emit as single "tool" event
+					emitter.EmitHarnessLine("tool", text)
+				} else {
+					// Tool result — emit as "result" (truncated to avoid flooding)
+					result := truncate(text, 30)
+					for _, part := range strings.Split(result, "\n") {
+						if p := strings.TrimSpace(part); p != "" {
+							emitter.EmitHarnessLine("result", p)
+						}
 					}
 				}
 			}

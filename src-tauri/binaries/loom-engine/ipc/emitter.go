@@ -40,13 +40,23 @@ func (e *Emitter) EmitLogLine(content string) {
 	})
 }
 
-// EmitClaudeMessage emits a Claude prose message with the CLAUDE level so the
-// frontend can render it as a chat bubble distinct from system log lines.
+// EmitHarnessLogLine emits a Claude prose line for the Harness chat panel.
 func (e *Emitter) EmitHarnessLogLine(content string) {
 	e.Emit("harness_log_line", LogLine{
 		Timestamp: time.Now().Format("15:04:05"),
 		Level:     "CLAUDE",
 		Content:   content,
+		Kind:      "prose",
+	})
+}
+
+// EmitHarnessLine emits a typed harness line: "prose", "tool", or "result".
+func (e *Emitter) EmitHarnessLine(kind, content string) {
+	e.Emit("harness_log_line", LogLine{
+		Timestamp: time.Now().Format("15:04:05"),
+		Level:     "CLAUDE",
+		Content:   content,
+		Kind:      kind,
 	})
 }
 

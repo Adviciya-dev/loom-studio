@@ -179,18 +179,36 @@ func parseTask(content, filename, filePath string) (Task, error) {
 		t.Status = StatusPending
 	}
 
-	// If no explicit prompt (or only placeholder content like "—", "---", "N/A",
-	// or empty code fences), build a predefined prompt that points Claude at the
-	// task file so it reads and implements it directly.
-	stripped := t.Prompt
+	// Check whether the Claude Code Context section has real content
+	// (not just placeholders like "—", "---", "N/A", or empty fences).
+	extraCtx := t.Prompt
+	stripped := extraCtx
 	for _, r := range []string{"```", "—", "-", "N/A", "n/a", " ", "\t", "\n", "\r"} {
 		stripped = strings.ReplaceAll(stripped, r, "")
 	}
-	if strings.TrimSpace(stripped) == "" {
-		t.Prompt = "Read the task file at `" + filePath + "` and implement everything described in it. " +
-			"Follow all sub-tasks, acceptance criteria, and technical notes exactly as specified. " +
-			"Do not ask for clarification — implement the full task as written."
+	hasExtra := strings.TrimSpace(stripped) != ""
+
+	// Always build a comprehensive prompt that embeds the FULL task file so
+	// Claude has the description, sub-tasks, and acceptance criteria — not just
+	// the Claude Code Context section alone.
+	var b strings.Builder
+	b.WriteString("Implement the task at `")
+	b.WriteString(filePath)
+	b.WriteString("`. Here is the complete task specification:\n\n")
+	b.WriteString("---\n")
+	b.WriteString(content)
+	b.WriteString("\n---")
+
+	if hasExtra {
+		b.WriteString("\n\nAdditional implementation guidance from the task's Claude Code Context section:\n\n")
+		b.WriteString(extraCtx)
 	}
+
+	b.WriteString("\n\nImplement ALL requirements listed above completely. " +
+		"Follow every sub-task and acceptance criterion exactly as written. " +
+		"Do not skip any step and do not ask for clarification — implement the full task as described.")
+
+	t.Prompt = b.String()
 
 	return t, nil
 }

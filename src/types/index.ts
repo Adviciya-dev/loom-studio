@@ -59,6 +59,7 @@ export interface LogLine {
   timestamp: string
   level: LogLevel
   content: string
+  kind?: 'prose' | 'tool' | 'result'
 }
 
 export interface DiffLine {
