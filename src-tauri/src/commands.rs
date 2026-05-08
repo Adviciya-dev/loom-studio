@@ -4,6 +4,40 @@ use std::path::Path;
 
 use crate::{EngineState, HarnessChatState};
 
+/// Returns PATH expanded with common binary locations that GUI apps miss.
+/// claude is typically installed via npm/brew into dirs not in the GUI $PATH.
+fn expanded_path() -> String {
+    let cur = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .unwrap_or_default();
+    let sep = if cfg!(windows) { ";" } else { ":" };
+
+    let extra = vec![
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/local/sbin".to_string(),
+        format!("{}/.npm-packages/bin", home),
+        format!("{}/.local/bin", home),
+        format!("{}/npm/bin", home),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+    ];
+
+    let existing: std::collections::HashSet<&str> = cur.split(sep).collect();
+    let mut prepend: Vec<String> = extra
+        .into_iter()
+        .filter(|p| !existing.contains(p.as_str()))
+        .collect();
+
+    if prepend.is_empty() {
+        cur
+    } else {
+        prepend.push(cur);
+        prepend.join(sep)
+    }
+}
+
 #[tauri::command]
 pub fn get_platform() -> &'static str {
     #[cfg(target_os = "macos")]    { "macos" }
@@ -73,6 +107,7 @@ pub async fn invoke_claude(
     let mut child = Command::new("claude")
         .args(&args)
         .current_dir(&project_path)
+        .env("PATH", expanded_path())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
