@@ -885,8 +885,9 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 				continue
 			}
 			emitter.EmitLogLine(line)
+			clean := ansiRE.ReplaceAllString(line, "")
 			mu.Lock()
-			tail = append(tail, line)
+			tail = append(tail, clean)
 			if len(tail) > 300 {
 				tail = tail[len(tail)-300:]
 			}
@@ -896,8 +897,8 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 				"SyntaxError", "Cannot find module", "ERR_MODULE_NOT_FOUND",
 				"Error:", "error:", "FAILED", "✗",
 			} {
-				if strings.Contains(line, pat) {
-					keyLines = append(keyLines, line)
+				if strings.Contains(clean, pat) {
+					keyLines = append(keyLines, clean)
 					break
 				}
 			}
@@ -1025,6 +1026,13 @@ func last100Lines(s string) string {
 	return strings.Join(lines[len(lines)-100:], "\n")
 }
 
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+// stripANSI removes ANSI terminal escape codes from s.
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
+
 func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) {
 	// One context covers the entire multi-phase pipeline (13 min total).
 	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Minute)
@@ -1135,6 +1143,7 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 	runCmd.Env = append(os.Environ(), "CI=true")
 
 	passed, runOutput := streamCmd(runCtx, emitter, runCmd)
+	cleanOutput := stripANSI(runOutput) // strip ANSI before any text analysis
 
 	if passed {
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
@@ -1145,7 +1154,7 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 
 	// ── Phase D: diagnose failure (Go fast-path, then Claude if needed) ────
 	emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
-	category := classifyFailure(runOutput)
+	category := classifyFailure(cleanOutput)
 
 	switch category {
 	case "ENV":
@@ -1170,10 +1179,13 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 		"--dangerously-skip-permissions",
 		"--print",
 		"--output-format", "stream-json",
-		buildDiagnosisPrompt(testID, last100Lines(runOutput)),
+		buildDiagnosisPrompt(testID, last100Lines(cleanOutput)),
 	)
 	diagCmd.Dir = projectPath
-	diagOut, _ := diagCmd.Output()
+	diagOut, diagErr := diagCmd.Output()
+	if diagErr != nil {
+		emitter.EmitLogLine("⚠ Diagnosis call failed: " + diagErr.Error())
+	}
 	diagRaw := string(diagOut)
 
 	failureDetails := extractFailureDetails(diagRaw)
