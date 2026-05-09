@@ -870,7 +870,10 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 	}
 
 	var mu sync.Mutex
+	// tail: last 300 lines (covers large Playwright runs with retries)
+	// keyLines: lines matching error patterns, kept regardless of position
 	var tail []string
+	var keyLines []string
 	var wg sync.WaitGroup
 
 	scan := func(r interface{ Read([]byte) (int, error) }) {
@@ -884,8 +887,19 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 			emitter.EmitLogLine(line)
 			mu.Lock()
 			tail = append(tail, line)
-			if len(tail) > 30 {
-				tail = tail[len(tail)-30:]
+			if len(tail) > 300 {
+				tail = tail[len(tail)-300:]
+			}
+			// Keep important diagnostic lines regardless of buffer position.
+			for _, pat := range []string{
+				"ERR_CONNECTION_REFUSED", "ECONNREFUSED", "net::",
+				"SyntaxError", "Cannot find module", "ERR_MODULE_NOT_FOUND",
+				"Error:", "error:", "FAILED", "✗",
+			} {
+				if strings.Contains(line, pat) {
+					keyLines = append(keyLines, line)
+					break
+				}
 			}
 			mu.Unlock()
 		}
@@ -901,9 +915,9 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 		return false, "Timed out"
 	}
 	mu.Lock()
-	out := strings.Join(tail, "\n")
+	combined := strings.Join(keyLines, "\n") + "\n" + strings.Join(tail, "\n")
 	mu.Unlock()
-	return runErr == nil, out
+	return runErr == nil, combined
 }
 
 
@@ -975,15 +989,29 @@ func buildDiagnosisPrompt(testID, testOutput string) string {
 
 // classifyFailure does cheap string-match pre-classification before invoking Claude.
 func classifyFailure(output string) string {
-	if strings.Contains(output, "ECONNREFUSED") ||
-		strings.Contains(output, "ERR_CONNECTION_REFUSED") ||
-		strings.Contains(output, "connect ECONNREFUSED") {
-		return "ENV"
+	// ENV: server not reachable
+	envPatterns := []string{
+		"ECONNREFUSED", "ERR_CONNECTION_REFUSED",
+		"net::ERR_CONNECTION_REFUSED", // Playwright Chromium format
+		"connect ECONNREFUSED",
+		"ETIMEDOUT", "ENOTFOUND",
+		"ERR_NETWORK_CHANGED",
 	}
-	if strings.Contains(output, "Cannot find module") ||
-		strings.Contains(output, "ERR_MODULE_NOT_FOUND") ||
-		strings.Contains(output, "SyntaxError") {
-		return "TEST"
+	for _, p := range envPatterns {
+		if strings.Contains(output, p) {
+			return "ENV"
+		}
+	}
+	// TEST: spec file is broken (not an app bug)
+	testPatterns := []string{
+		"Cannot find module", "ERR_MODULE_NOT_FOUND",
+		"SyntaxError", "ReferenceError: ",
+		"is not a function", "is not defined",
+	}
+	for _, p := range testPatterns {
+		if strings.Contains(output, p) {
+			return "TEST"
+		}
 	}
 	return "BUG"
 }
