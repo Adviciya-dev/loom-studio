@@ -1223,25 +1223,37 @@ func extractFailureDetails(rawStream string) string {
 		}
 	}
 
-	// Fallback: look for Playwright failure lines inside JSON "text" values.
+	// Fallback: scan assistant-type NDJSON lines for Playwright/API failure patterns.
 	reTextVal := regexp.MustCompile(`"text"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 	seen := make(map[string]bool)
 	var lines []string
-	for _, m := range reTextVal.FindAllStringSubmatch(rawStream, -1) {
-		decoded := strings.ReplaceAll(m[1], `\n`, "\n")
-		decoded = strings.ReplaceAll(decoded, `\"`, `"`)
-		for _, line := range strings.Split(decoded, "\n") {
-			t := strings.TrimSpace(line)
-			if t == "" || seen[t] {
-				continue
-			}
-			if strings.Contains(t, "×") ||
-				strings.HasPrefix(t, "Error:") ||
-				strings.Contains(t, "Expected ") ||
-				strings.Contains(t, "Received ") ||
-				strings.Contains(t, "● ") {
-				seen[t] = true
-				lines = append(lines, t)
+	for _, streamLine := range strings.Split(rawStream, "\n") {
+		if !strings.Contains(streamLine, `"type":"assistant"`) &&
+			!strings.Contains(streamLine, `"role":"assistant"`) {
+			continue
+		}
+		for _, m := range reTextVal.FindAllStringSubmatch(streamLine, -1) {
+			decoded := strings.ReplaceAll(m[1], `\n`, "\n")
+			decoded = strings.ReplaceAll(decoded, `\"`, `"`)
+			for _, line := range strings.Split(decoded, "\n") {
+				t := strings.TrimSpace(line)
+				if t == "" || seen[t] {
+					continue
+				}
+				if strings.Contains(t, "×") ||
+					strings.HasPrefix(t, "Error:") ||
+					strings.Contains(t, "Expected ") ||
+					strings.Contains(t, "Received ") ||
+					strings.Contains(t, "● ") ||
+					strings.Contains(t, "[BUG]") ||
+					strings.Contains(t, "[ENV]") ||
+					strings.Contains(t, "[TEST]") ||
+					strings.Contains(t, "got 4") || // 401, 403, 404, 429, 400 etc.
+					strings.Contains(t, "got 5") || // 500, 503 etc.
+					strings.Contains(t, "status ") {
+					seen[t] = true
+					lines = append(lines, t)
+				}
 			}
 		}
 	}
@@ -1316,16 +1328,22 @@ func createBugReport(projectPath, testID, testFilePath, failureDetails, claudeSu
 		actualResult = "Test failed with the following errors:\n\n```\n" + failureDetails + "\n```"
 	}
 
-	// Build "Investigation" section from Claude's full prose output.
+	// Build "Investigation" section from Claude's prose output.
+	// Use the LAST portion — that's the failure analysis/conclusion, not the setup planning.
 	investigationSection := ""
 	if claudeSummary != "" {
-		// Trim to a reasonable length so the bug file stays readable.
 		summary := claudeSummary
-		if len(summary) > 4000 {
-			summary = summary[:4000] + "\n… (truncated — see Output panel for full log)"
+		const maxLen = 3000
+		prefix := ""
+		if len(summary) > maxLen {
+			summary = summary[len(summary)-maxLen:]
+			// Trim to the first newline so we don't start mid-sentence.
+			if nl := strings.Index(summary, "\n"); nl > 0 {
+				summary = summary[nl+1:]
+			}
+			prefix = "*(initial setup omitted — see Output panel for full log)*\n\n"
 		}
-		investigationSection = "## Investigation Notes\n\n" +
-			"*Auto-captured from Claude's QA run:*\n\n" + summary + "\n\n"
+		investigationSection = "## Investigation Notes\n\n" + prefix + summary + "\n\n"
 	}
 
 	content := "# " + bugID + ": " + tcTitle + " — test failure\n\n" +
