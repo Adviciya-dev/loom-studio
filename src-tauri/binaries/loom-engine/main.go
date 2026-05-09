@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -986,6 +987,9 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
 	} else {
 		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
+		if bugID := createBugReport(projectPath, testID, filePath); bugID != "" {
+			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+		}
 	}
 	updateTestCaseResult(filePath, status)
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": status})
@@ -1082,6 +1086,102 @@ func updateTestCaseResult(filePath, status string) {
 	}
 
 	_ = os.WriteFile(filePath, []byte(content), 0o644)
+}
+
+var reBugFile = regexp.MustCompile(`^BUG-(\d+)\.md$`)
+
+// nextBugNumber scans bugsDir for BUG-NNN.md files and returns the next number.
+func nextBugNumber(bugsDir string) int {
+	entries, err := os.ReadDir(bugsDir)
+	if err != nil {
+		return 1
+	}
+	max := 0
+	for _, e := range entries {
+		m := reBugFile.FindStringSubmatch(e.Name())
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		if n > max {
+			max = n
+		}
+	}
+	return max + 1
+}
+
+// createBugReport creates a bug markdown file under harness/bugs/ for a failed test.
+// Returns the bug ID (e.g. "BUG-003") or "" on error.
+func createBugReport(projectPath, testID, testFilePath string) string {
+	bugsDir := filepath.Join(projectPath, "harness", "bugs")
+	if err := os.MkdirAll(bugsDir, 0o755); err != nil {
+		return ""
+	}
+
+	num := nextBugNumber(bugsDir)
+	bugID := fmt.Sprintf("BUG-%03d", num)
+
+	// Extract test case title from the first # heading.
+	tcTitle := testID
+	if data, err := os.ReadFile(testFilePath); err == nil {
+		for _, line := range strings.SplitN(string(data), "\n", 30) {
+			if strings.HasPrefix(strings.TrimSpace(line), "# ") {
+				heading := strings.TrimPrefix(strings.TrimSpace(line), "# ")
+				if idx := strings.Index(heading, ": "); idx >= 0 {
+					tcTitle = strings.TrimSpace(heading[idx+2:])
+				} else {
+					tcTitle = heading
+				}
+				break
+			}
+		}
+	}
+
+	// Relative path from project root for the test case link.
+	tcRel, relErr := filepath.Rel(projectPath, testFilePath)
+	if relErr != nil {
+		tcRel = testFilePath
+	}
+	tcRel = filepath.ToSlash(tcRel)
+
+	now := time.Now()
+	today := fmt.Sprintf("%d-%02d-%02d", now.Year(), int(now.Month()), now.Day())
+	dateTime := fmt.Sprintf("%d-%02d-%02d %02d:%02d",
+		now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
+
+	content := "# " + bugID + ": " + tcTitle + " — test failure\n\n" +
+		"## Meta\n\n" +
+		"| Field | Value |\n" +
+		"|-------|-------|\n" +
+		"| **Test Case** | [" + testID + "](" + tcRel + ") |\n" +
+		"| **Status** | 🐛 Open |\n" +
+		"| **Severity** | Medium |\n" +
+		"| **Found Date** | " + today + " |\n" +
+		"| **Found By** | Loom QA Automation |\n" +
+		"| **Reproduced** | — |\n" +
+		"| **Fixed Date** | — |\n\n" +
+		"## Description\n\n" +
+		"Automated test **" + testID + "** failed during QA run at " + dateTime + ".\n\n" +
+		"## Steps to Reproduce\n\n" +
+		"1. Open project in Loom Studio\n" +
+		"2. Navigate to QA Test Suite\n" +
+		"3. Select **" + testID + "** and click **Generate & Run**\n\n" +
+		"## Expected Result\n\n" +
+		"All steps in [" + testID + "](" + tcRel + ") pass.\n\n" +
+		"## Actual Result\n\n" +
+		"Test failed. Check the Output panel in Loom Studio for the full execution log.\n\n" +
+		"## Fix Notes\n\n" +
+		"—\n\n" +
+		"## Progress Log\n\n" +
+		"| Date | Update |\n" +
+		"|------|--------|\n" +
+		"| " + today + " | Bug auto-created by Loom QA on test failure |\n"
+
+	bugPath := filepath.Join(bugsDir, bugID+".md")
+	if err := os.WriteFile(bugPath, []byte(content), 0o644); err != nil {
+		return ""
+	}
+	return bugID
 }
 
 // chatMu ensures only one harness chat runs at a time.
