@@ -121,6 +121,7 @@ function QATestSuite() {
       project_path: activeProject.path,
       test_id: selectedTc.id,
       file_path: selectedTc.file_path,
+      linked_task: selectedTc.linked_task,
       headed,
     }).catch(() => setSending(false))
   }, [activeProject, selectedTc, sending, selectedStatus, headed])

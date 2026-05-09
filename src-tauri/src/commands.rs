@@ -280,6 +280,7 @@ fn parse_test_case_md(content: &str, file_path: &str, stem: &str) -> HashMap<Str
     let mut tc_type = String::new();
     let mut priority = String::new();
     let mut automated = String::new();
+    let mut linked_task = String::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
@@ -301,6 +302,7 @@ fn parse_test_case_md(content: &str, file_path: &str, stem: &str) -> HashMap<Str
                     "type" => tc_type = val,
                     "priority" => priority = val,
                     "automated" => automated = val,
+                    "linked task" => linked_task = val,
                     _ => {}
                 }
             }
@@ -312,6 +314,7 @@ fn parse_test_case_md(content: &str, file_path: &str, stem: &str) -> HashMap<Str
     map.insert("type".to_string(), tc_type);
     map.insert("priority".to_string(), priority);
     map.insert("automated".to_string(), automated);
+    map.insert("linked_task".to_string(), linked_task);
     map
 }
 

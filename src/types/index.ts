@@ -87,6 +87,7 @@ export interface TestCase {
   priority: string
   automated: string
   file_path: string
+  linked_task: string
 }
 
 export const TEST_CASE_STATUSES = ['idle', 'running', 'passed', 'failed'] as const

@@ -730,7 +730,11 @@ func main() {
 			if raw, ok := cmd["headed"]; ok {
 				json.Unmarshal(raw, &headed) //nolint:errcheck
 			}
-			go generateAndRunTest(emitter, projectPath, testID, filePath, headed)
+			var linkedTaskID string
+			if raw, ok := cmd["linked_task"]; ok {
+				json.Unmarshal(raw, &linkedTaskID) //nolint:errcheck
+			}
+			go generateAndRunTest(emitter, projectPath, testID, filePath, linkedTaskID, headed)
 
 		case "ping":
 			emitter.Emit("pong", nil)
@@ -903,10 +907,100 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 }
 
 
-func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+// buildGenerationPrompt constructs the focused prompt for Claude call #1.
+// Claude's only job: write the .spec.ts and playwright.config.ts files.
+func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed bool) string {
+	featureSection := "No linked task provided."
+	if taskContent != "" {
+		featureSection = taskContent
+	}
+	headedConfig := ""
+	if headed {
+		headedConfig = "\n   - Set: use: { headless: false, launchOptions: { slowMo: 600 } }"
+	}
+	return "You are a senior QA engineer. Your ONLY job in this invocation is to WRITE FILES.\n" +
+		"Do NOT run any commands. Do NOT start any servers. Just write the files.\n\n" +
 
-	// Register so kill / stop_test can cancel this goroutine
+		"## Feature Under Test\n\n" +
+		featureSection + "\n\n" +
+
+		"## Test Case Specification\n\n" +
+		testCaseContent + "\n\n" +
+
+		"## Instructions\n\n" +
+		"1. Read package.json (and any .env files) to understand the tech stack, server ports,\n" +
+		"   and start commands.\n\n" +
+		"2. Classify the test as: FRONTEND/UI, BACKEND/API, or HYBRID.\n\n" +
+		"3. Delete any stale file first:\n" +
+		"     rm -f .loom-generated/" + testID + ".spec.ts\n" +
+		"   Then write the test to: .loom-generated/" + testID + ".spec.ts\n\n" +
+		"   FRONTEND/UI tests:\n" +
+		"   - import { test, expect } from '@playwright/test';\n" +
+		"   - Use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible()\n" +
+		"   - Cover EVERY numbered step as its own test() block\n\n" +
+		"   BACKEND/API tests:\n" +
+		"   - import { test, expect } from '@playwright/test';\n" +
+		"   - Wrap ALL steps in test.describe.serial('" + testID + "', () => { ... })\n" +
+		"   - Declare shared variables (tokens, IDs) with `let` at describe scope\n" +
+		"   - Each numbered step → one test() block; use the `request` fixture for HTTP calls\n" +
+		"   - Do NOT use curl inside test bodies\n\n" +
+		"   Every test() name MUST contain the string \"" + testID + "\"\n\n" +
+		"4. Write or update the playwright config at: .loom-generated/playwright.config.ts\n" +
+		"   - Set baseURL to the correct localhost port\n" +
+		"   - Add a webServer block with the dev server start command and port so Playwright\n" +
+		"     manages the server lifecycle automatically (no manual server startup needed)" +
+		headedConfig + "\n\n" +
+		"5. When both files are written and saved, output exactly one line:\n" +
+		"   LOOM:GENERATED\n" +
+		"   (nothing else after this marker)\n"
+}
+
+// buildDiagnosisPrompt constructs the focused prompt for Claude call #2.
+// Claude's only job: classify the failure and output a structured block.
+func buildDiagnosisPrompt(testID, testOutput string) string {
+	return "Playwright test \"" + testID + "\" failed. Classify this failure as exactly one of:\n\n" +
+		"  [ENV]  — infrastructure issue (server down, connection refused, missing env var)\n" +
+		"  [TEST] — test script bug (wrong selector, bad assertion, wrong URL in the spec)\n" +
+		"  [BUG]  — real application bug (server returned wrong status code or response body)\n\n" +
+		"Output this exact block (no other text):\n" +
+		"LOOM:FAILURE_DETAILS_START\n" +
+		"Category: [ENV|TEST|BUG]\n" +
+		"Root cause: <one clear sentence>\n" +
+		"Expected: <what should have happened>\n" +
+		"Actual: <what actually happened>\n" +
+		"LOOM:FAILURE_DETAILS_END\n" +
+		"LOOM:FAILED\n\n" +
+		"Test output:\n" + testOutput
+}
+
+// classifyFailure does cheap string-match pre-classification before invoking Claude.
+func classifyFailure(output string) string {
+	if strings.Contains(output, "ECONNREFUSED") ||
+		strings.Contains(output, "ERR_CONNECTION_REFUSED") ||
+		strings.Contains(output, "connect ECONNREFUSED") {
+		return "ENV"
+	}
+	if strings.Contains(output, "Cannot find module") ||
+		strings.Contains(output, "ERR_MODULE_NOT_FOUND") ||
+		strings.Contains(output, "SyntaxError") {
+		return "TEST"
+	}
+	return "BUG"
+}
+
+// last100Lines returns the last 100 lines of s (or all of s if shorter).
+func last100Lines(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= 100 {
+		return s
+	}
+	return strings.Join(lines[len(lines)-100:], "\n")
+}
+
+func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) {
+	// One context covers the entire multi-phase pipeline (13 min total).
+	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Minute)
+
 	testCancelMu.Lock()
 	testCancelFn = cancel
 	testCancelMu.Unlock()
@@ -922,179 +1016,156 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 	emitter.Emit("engine_status", "running")
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
 
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		emitter.EmitLogLine("✗ Cannot read test case: " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+	// ── Phase A: pre-checks (Go, instant) ──────────────────────────────────
+	if _, err := exec.LookPath(npxBin()); err != nil {
+		emitter.EmitEngineError("missing_dep:npx:npx not found — install Node.js and ensure it is on PATH")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 		return
 	}
+	if out, err := exec.Command(npxBin(), "playwright", "--version").Output(); err != nil {
+		emitter.EmitLogLine("⚠ Playwright not installed — Claude will install it during generation")
+	} else {
+		emitter.EmitLogLine("Playwright " + strings.TrimSpace(string(out)))
+	}
 
-	prompt := "You are an autonomous QA engineer inside Loom Studio. " +
-		"The tester knows nothing about servers, ports, or tooling — you handle EVERYTHING.\n\n" +
+	// ── Read files ─────────────────────────────────────────────────────────
+	testCaseBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		emitter.EmitLogLine("✗ Cannot read test case: " + err.Error())
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+	taskContent := task.GetLinkedTaskContent(projectPath, linkedTaskID)
+	if taskContent != "" {
+		emitter.EmitLogLine(fmt.Sprintf("📋 Loaded linked task: %s", linkedTaskID))
+	}
 
-		"═══════════════════════════════════════════════════════\n" +
-		"PHASE 1 — UNDERSTAND THE TEST\n" +
-		"═══════════════════════════════════════════════════════\n" +
-		"Read the test case below. Classify it:\n" +
-		"  • FRONTEND/UI — needs a browser (Playwright page interactions)\n" +
-		"  • BACKEND/API — tests HTTP endpoints directly (use Playwright request fixture or curl)\n" +
-		"  • HYBRID      — both\n\n" +
+	// ── Phase B: generate spec (Claude call #1, streamed, 5 min) ──────────
+	emitter.EmitLogLine("⟳ Generating Playwright test…")
+	genPrompt := buildGenerationPrompt(testID, string(testCaseBytes), taskContent, headed)
+	genCtx, genCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer genCancel()
 
-		"═══════════════════════════════════════════════════════\n" +
-		"PHASE 2 — FIX THE ENVIRONMENT (do this before writing any test)\n" +
-		"═══════════════════════════════════════════════════════\n" +
-		"1. Find every service the test needs:\n" +
-		"   - Read package.json scripts, .env files, docker-compose.yml, README to find ports and start commands.\n" +
-		"   - For each required service check: curl -s -o /dev/null -w \"%{http_code}\" http://localhost:<PORT>/health\n" +
-		"     or curl http://localhost:<PORT> — any 2xx/3xx means it's up.\n" +
-		"2. If a service is NOT running:\n" +
-		"   - Find the correct start command (e.g. pnpm dev, npm run start, node dist/main.js).\n" +
-		"   - Start it in the background: <start-command> &\n" +
-		"   - Wait for it: for i in $(seq 1 30); do curl -s http://localhost:<PORT> && break || sleep 1; done\n" +
-		"   - Confirm it's up before continuing.\n" +
-		"3. Check Playwright: npx playwright --version\n" +
-		"   If missing: npm install --save-dev @playwright/test && npx playwright install chromium\n" +
-		"4. Read .env / .env.local / .env.example. Note any missing required variables and warn, but continue.\n\n" +
-
-		"═══════════════════════════════════════════════════════\n" +
-		"PHASE 3 — WRITE & RUN THE TEST\n" +
-		"═══════════════════════════════════════════════════════\n" +
-		"5. mkdir -p .loom-generated && rm -f .loom-generated/" + testID + ".spec.ts\n" +
-		"   (Always delete the old file — never reuse a stale test from a previous run.)\n" +
-		"6. Write the test to: .loom-generated/" + testID + ".spec.ts\n" +
-		"   FRONTEND/UI tests:\n" +
-		"     import { test, expect } from '@playwright/test';\n" +
-		"     Use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible() etc.\n" +
-		"     Include a playwright.config.ts webServer block if the server was started in phase 2.\n" +
-		"   BACKEND/API tests — IMPORTANT structure rules:\n" +
-		"     import { test, expect } from '@playwright/test';\n" +
-		"     Wrap ALL steps inside ONE test.describe.serial('" + testID + "', () => { ... })\n" +
-		"     Declare shared variables (tokens, ids) with `let` at the describe scope so earlier steps feed later ones.\n" +
-		"     Each test case step becomes one test() block inside the describe.\n" +
-		"     Example:\n" +
-		"       test.describe.serial('" + testID + "', () => {\n" +
-		"         let accessToken = '';\n" +
-		"         test('" + testID + " Step 1: ...', async ({ request }) => {\n" +
-		"           const r = await request.post('/auth/otp/send', { data: { phone: '+919876543210' } });\n" +
-		"           expect(r.status()).toBe(200);\n" +
-		"         });\n" +
-		"         test('" + testID + " Step 4: ...', async ({ request }) => {\n" +
-		"           const r = await request.post('/auth/otp/verify', { data: { phone: '+919876543210', otp: '123456' } });\n" +
-		"           expect(r.status()).toBe(200);\n" +
-		"           accessToken = (await r.json()).data.accessToken;  // shared for later steps\n" +
-		"         });\n" +
-		"       });\n" +
-		"     Use the `request` fixture for all HTTP calls — NOT curl inside test bodies.\n" +
-		"     The baseURL is already set to http://localhost:<PORT> in playwright config — use relative paths.\n" +
-		"   EVERY test name MUST contain: " + testID + "\n" +
-		"   Cover EVERY numbered step in the test case with its own test() block.\n" +
-		func() string {
-			if headed {
-				return "7. Run with visible browser so the tester can watch each screen:\n" +
-					"   npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line --headed\n" +
-					"   Also set slowMo in the playwright config use block: use: { headless: false, launchOptions: { slowMo: 600 } }\n" +
-					"   This lets the tester see every navigation, click, and assertion in real time.\n\n"
-			}
-			return "7. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n\n"
-		}() +
-
-		"═══════════════════════════════════════════════════════\n" +
-		"PHASE 4 — DIAGNOSE, FIX & RETRY (up to 2 retries)\n" +
-		"═══════════════════════════════════════════════════════\n" +
-		"8. If the run FAILS, for EACH failing test:\n" +
-		"   a. Read the exact error. Identify the ROOT CAUSE category:\n" +
-		"      [ENV]  Infrastructure issue — server down, wrong port, missing env var, network error\n" +
-		"      [TEST] Test script bug — wrong selector, wrong assertion, wrong URL in test code\n" +
-		"      [BUG]  Real application bug — server returned wrong status/body, feature not implemented\n" +
-		"   b. For [ENV] and [TEST] failures: fix the issue and run again (retry up to 2 times total).\n" +
-		"      - [ENV]: start the service, fix the URL, export the env var, then rerun.\n" +
-		"      - [TEST]: fix the test script (wrong assertion, wrong field name, etc.), then rerun.\n" +
-		"   c. For [BUG] failures: do NOT retry endlessly. Document the bug clearly and move on.\n\n" +
-
-		"═══════════════════════════════════════════════════════\n" +
-		"PHASE 5 — REPORT\n" +
-		"═══════════════════════════════════════════════════════\n" +
-		"9. Write a plain-English summary:\n" +
-		"   - Services started / already running\n" +
-		"   - Fixes applied (env issues, test script corrections)\n" +
-		"   - Which steps passed, which failed\n" +
-		"   - For each failure: root cause category ([ENV]/[TEST]/[BUG]), exact error, expected vs actual\n" +
-		"10. Output the result marker on its own line:\n" +
-		"    LOOM:PASSED   — every step passed after all retries\n" +
-		"    LOOM:FAILED   — one or more steps still fail\n" +
-		"    Then output:\n" +
-		"    LOOM:FAILURE_DETAILS_START\n" +
-		"    <for each failure: step name, root cause category, exact error, expected, actual>\n" +
-		"    LOOM:FAILURE_DETAILS_END\n\n" +
-
-		"TEST CASE:\n" + string(content)
-
-	cmd := exec.CommandContext(ctx,
+	genCmd := exec.CommandContext(genCtx,
 		"claude",
 		"--dangerously-skip-permissions",
 		"--print",
 		"--verbose",
 		"--output-format", "stream-json",
-		prompt,
+		genPrompt,
 	)
-	cmd.Dir = projectPath
+	genCmd.Dir = projectPath
+	genCmd.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
 
-	stdout, err := cmd.StdoutPipe()
+	genStdout, err := genCmd.StdoutPipe()
 	if err != nil {
 		emitter.EmitLogLine("✗ " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 		return
 	}
-	stderr, err := cmd.StderrPipe()
+	genStderr, err := genCmd.StderrPipe()
 	if err != nil {
 		emitter.EmitLogLine("✗ " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 		return
 	}
-
-	if err := cmd.Start(); err != nil {
+	if err := genCmd.Start(); err != nil {
 		emitter.EmitLogLine("✗ Cannot start Claude: " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed", "error": err.Error()})
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 		return
 	}
 
-	// TeeReader lets process.Streamer render the stream in real-time while we
-	// also capture the raw JSON to detect the LOOM:PASSED / LOOM:FAILED marker.
-	var raw bytes.Buffer
-	tee := io.TeeReader(stdout, &raw)
+	var genRaw bytes.Buffer
+	genTee := io.TeeReader(genStdout, &genRaw)
+	process.NewStreamer(genTee, genStderr).Stream(emitter)
+	genCmd.Wait() //nolint:errcheck
 
-	process.NewStreamer(tee, stderr).Stream(emitter)
-	cmd.Wait() //nolint:errcheck
-
-	rawStr := raw.String()
-	status := "failed"
-	if strings.Contains(rawStr, "LOOM:PASSED") {
-		status = "passed"
+	if !strings.Contains(genRaw.String(), "LOOM:GENERATED") {
+		emitter.EmitLogLine("✗ Generation failed — LOOM:GENERATED marker not found")
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
 	}
+	emitter.EmitLogLine("✓ Test spec generated")
 
-	// Structured failure block (LOOM markers) + Claude's full investigation prose.
-	failureDetails := extractFailureDetails(rawStr)
-	claudeSummary := extractClaudeProse(rawStr)
+	// ── Phase C: run test (Go npx, streamed, 3 min) ────────────────────────
+	emitter.EmitLogLine("⟳ Running Playwright tests…")
+	runCtx, runCancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer runCancel()
 
-	if status == "passed" {
+	runArgs := []string{
+		"playwright", "test",
+		".loom-generated/" + testID + ".spec.ts",
+		"--config", ".loom-generated/playwright.config.ts",
+		"--reporter=line",
+	}
+	if headed {
+		runArgs = append(runArgs, "--headed")
+	}
+	runCmd := exec.CommandContext(runCtx, npxBin(), runArgs...)
+	runCmd.Dir = projectPath
+	runCmd.Env = append(os.Environ(), "CI=true")
+
+	passed, runOutput := streamCmd(runCtx, emitter, runCmd)
+
+	if passed {
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
-	} else {
-		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
-		if failureDetails != "" {
-			emitter.EmitLogLine("── Failure details ──")
-			for _, line := range strings.Split(failureDetails, "\n") {
-				if l := strings.TrimSpace(line); l != "" {
-					emitter.EmitLogLine("  " + l)
-				}
-			}
-			emitter.EmitLogLine("─────────────────────")
-		}
-		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
-			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
-		}
+		updateTestCaseResult(filePath, "passed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed"})
+		return
 	}
-	updateTestCaseResult(filePath, status)
-	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": status})
+
+	// ── Phase D: diagnose failure (Go fast-path, then Claude if needed) ────
+	emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
+	category := classifyFailure(runOutput)
+
+	switch category {
+	case "ENV":
+		emitter.EmitLogLine("⚠ Environment failure: connection refused — check that the server is running")
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	case "TEST":
+		emitter.EmitLogLine("⚠ Test script error (bad selector/assertion/module) — no bug report created")
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+
+	// BUG classification — ask Claude for structured diagnosis (non-streamed, 90 s)
+	emitter.EmitLogLine("⟳ Analysing failure…")
+	diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
+	defer diagCancel()
+
+	diagCmd := exec.CommandContext(diagCtx,
+		"claude",
+		"--dangerously-skip-permissions",
+		"--print",
+		"--output-format", "stream-json",
+		buildDiagnosisPrompt(testID, last100Lines(runOutput)),
+	)
+	diagCmd.Dir = projectPath
+	diagOut, _ := diagCmd.Output()
+	diagRaw := string(diagOut)
+
+	failureDetails := extractFailureDetails(diagRaw)
+	claudeSummary := extractClaudeProse(diagRaw)
+
+	if failureDetails != "" {
+		emitter.EmitLogLine("── Failure details ──")
+		for _, line := range strings.Split(failureDetails, "\n") {
+			if l := strings.TrimSpace(line); l != "" {
+				emitter.EmitLogLine("  " + l)
+			}
+		}
+		emitter.EmitLogLine("─────────────────────")
+	}
+
+	if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
+		emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+	}
+	updateTestCaseResult(filePath, "failed")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 }
 
 var (

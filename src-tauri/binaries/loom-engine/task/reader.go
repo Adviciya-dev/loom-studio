@@ -261,6 +261,23 @@ func patchRow(lines []string, re *regexp.Regexp, value string) {
 	}
 }
 
+// GetLinkedTaskContent returns the raw markdown content of the task whose parsed ID
+// matches taskID. Returns "" if taskID is empty, the file is not found, or unreadable.
+func GetLinkedTaskContent(projectPath, taskID string) string {
+	if taskID == "" {
+		return ""
+	}
+	absPath := findTaskFile(projectPath, taskID)
+	if absPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 // MarkTaskStarted sets Status → "🔄 In Progress" and Start Date → today in the
 // task file, then returns the path relative to projectPath so it can be
 // embedded in the Claude prompt for the completion instruction.
