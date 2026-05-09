@@ -938,7 +938,14 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		"   - Test name must include the test ID: " + testID + "\n" +
 		"   - Write specific assertions based on the Expected Result\n" +
 		"5. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n" +
-		"6. After the run, output exactly one line: LOOM:PASSED or LOOM:FAILED\n\n" +
+		"6. After the run, output a summary:\n" +
+		"   - If ALL tests passed: write one line exactly: LOOM:PASSED\n" +
+		"   - If ANY test failed:\n" +
+		"     * Write 'LOOM:FAILED' on its own line\n" +
+		"     * Then write 'LOOM:FAILURE_DETAILS_START'\n" +
+		"     * List each failing test: test name, the exact assertion error, expected value, received value\n" +
+		"     * Write 'LOOM:FAILURE_DETAILS_END'\n" +
+		"     * Do NOT retry or fix — just report the result accurately\n\n" +
 		"TEST CASE:\n" + string(content)
 
 	cmd := exec.CommandContext(ctx,
@@ -978,16 +985,28 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 	process.NewStreamer(tee, stderr).Stream(emitter)
 	cmd.Wait() //nolint:errcheck
 
+	rawStr := raw.String()
 	status := "failed"
-	if strings.Contains(raw.String(), "LOOM:PASSED") {
+	if strings.Contains(rawStr, "LOOM:PASSED") {
 		status = "passed"
 	}
+
+	failureDetails := extractFailureDetails(rawStr)
 
 	if status == "passed" {
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
 	} else {
 		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
-		if bugID := createBugReport(projectPath, testID, filePath); bugID != "" {
+		if failureDetails != "" {
+			emitter.EmitLogLine("── Failure details ──")
+			for _, line := range strings.Split(failureDetails, "\n") {
+				if l := strings.TrimSpace(line); l != "" {
+					emitter.EmitLogLine("  " + l)
+				}
+			}
+			emitter.EmitLogLine("─────────────────────")
+		}
+		if bugID := createBugReport(projectPath, testID, filePath, failureDetails); bugID != "" {
 			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
 		}
 	}
@@ -1088,6 +1107,52 @@ func updateTestCaseResult(filePath, status string) {
 	_ = os.WriteFile(filePath, []byte(content), 0o644)
 }
 
+// extractFailureDetails pulls the text between LOOM:FAILURE_DETAILS_START and
+// LOOM:FAILURE_DETAILS_END from the raw Claude stream JSON. Falls back to
+// scanning for Playwright failure markers (×, Error:, Expected, Received)
+// if the delimiters are absent.
+func extractFailureDetails(rawStream string) string {
+	// Primary: delimited block written by Claude per the prompt instructions.
+	const start = "LOOM:FAILURE_DETAILS_START"
+	const end = "LOOM:FAILURE_DETAILS_END"
+	if s := strings.Index(rawStream, start); s >= 0 {
+		s += len(start)
+		e := strings.Index(rawStream[s:], end)
+		if e >= 0 {
+			block := strings.TrimSpace(rawStream[s : s+e])
+			// Strip JSON escape sequences that leaked through.
+			block = strings.ReplaceAll(block, `\n`, "\n")
+			block = strings.ReplaceAll(block, `\"`, `"`)
+			block = strings.ReplaceAll(block, `\\`, `\`)
+			return block
+		}
+	}
+
+	// Fallback: look for Playwright failure lines inside JSON "text" values.
+	reTextVal := regexp.MustCompile(`"text"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	seen := make(map[string]bool)
+	var lines []string
+	for _, m := range reTextVal.FindAllStringSubmatch(rawStream, -1) {
+		decoded := strings.ReplaceAll(m[1], `\n`, "\n")
+		decoded = strings.ReplaceAll(decoded, `\"`, `"`)
+		for _, line := range strings.Split(decoded, "\n") {
+			t := strings.TrimSpace(line)
+			if t == "" || seen[t] {
+				continue
+			}
+			if strings.Contains(t, "×") ||
+				strings.HasPrefix(t, "Error:") ||
+				strings.Contains(t, "Expected ") ||
+				strings.Contains(t, "Received ") ||
+				strings.Contains(t, "● ") {
+				seen[t] = true
+				lines = append(lines, t)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 var reBugFile = regexp.MustCompile(`^BUG-(\d+)\.md$`)
 
 // nextBugNumber scans bugsDir for BUG-NNN.md files and returns the next number.
@@ -1111,8 +1176,9 @@ func nextBugNumber(bugsDir string) int {
 }
 
 // createBugReport creates a bug markdown file under harness/bugs/ for a failed test.
+// failureDetails is optional — included in the report when non-empty.
 // Returns the bug ID (e.g. "BUG-003") or "" on error.
-func createBugReport(projectPath, testID, testFilePath string) string {
+func createBugReport(projectPath, testID, testFilePath, failureDetails string) string {
 	bugsDir := filepath.Join(projectPath, "harness", "bugs")
 	if err := os.MkdirAll(bugsDir, 0o755); err != nil {
 		return ""
@@ -1149,6 +1215,11 @@ func createBugReport(projectPath, testID, testFilePath string) string {
 	dateTime := fmt.Sprintf("%d-%02d-%02d %02d:%02d",
 		now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
 
+	actualResult := "Test failed. Check the Output panel in Loom Studio for the full execution log."
+	if failureDetails != "" {
+		actualResult = "Test failed with the following errors:\n\n```\n" + failureDetails + "\n```"
+	}
+
 	content := "# " + bugID + ": " + tcTitle + " — test failure\n\n" +
 		"## Meta\n\n" +
 		"| Field | Value |\n" +
@@ -1169,7 +1240,7 @@ func createBugReport(projectPath, testID, testFilePath string) string {
 		"## Expected Result\n\n" +
 		"All steps in [" + testID + "](" + tcRel + ") pass.\n\n" +
 		"## Actual Result\n\n" +
-		"Test failed. Check the Output panel in Loom Studio for the full execution log.\n\n" +
+		actualResult + "\n\n" +
 		"## Fix Notes\n\n" +
 		"—\n\n" +
 		"## Progress Log\n\n" +
