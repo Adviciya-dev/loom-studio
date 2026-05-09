@@ -1169,27 +1169,42 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 		return
 	}
 
-	// BUG classification — ask Claude for structured diagnosis (non-streamed, 90 s)
+	// BUG classification — ask Claude for structured diagnosis (streamed, 90 s)
 	emitter.EmitLogLine("⟳ Analysing failure…")
 	diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
 	defer diagCancel()
 
+	diagPrompt := buildDiagnosisPrompt(testID, last100Lines(cleanOutput))
 	diagCmd := exec.CommandContext(diagCtx,
 		"claude",
 		"--dangerously-skip-permissions",
 		"--print",
+		"--verbose",
 		"--output-format", "stream-json",
-		buildDiagnosisPrompt(testID, last100Lines(cleanOutput)),
+		diagPrompt,
 	)
 	diagCmd.Dir = projectPath
-	diagOut, diagErr := diagCmd.Output()
-	if diagErr != nil {
-		emitter.EmitLogLine("⚠ Diagnosis call failed: " + diagErr.Error())
-	}
-	diagRaw := string(diagOut)
 
-	failureDetails := extractFailureDetails(diagRaw)
-	claudeSummary := extractClaudeProse(diagRaw)
+	var diagRaw bytes.Buffer
+	diagStdout, diagErr := diagCmd.StdoutPipe()
+	if diagErr != nil {
+		emitter.EmitLogLine("⚠ Diagnosis setup failed: " + diagErr.Error())
+	} else {
+		diagStderr, _ := diagCmd.StderrPipe()
+		if startErr := diagCmd.Start(); startErr != nil {
+			emitter.EmitLogLine("⚠ Diagnosis start failed: " + startErr.Error())
+		} else {
+			diagTee := io.TeeReader(diagStdout, &diagRaw)
+			process.NewStreamer(diagTee, diagStderr).Stream(emitter)
+			if waitErr := diagCmd.Wait(); waitErr != nil {
+				emitter.EmitLogLine("⚠ Diagnosis call error: " + waitErr.Error())
+			}
+		}
+	}
+
+	diagRawStr := diagRaw.String()
+	failureDetails := extractFailureDetails(diagRawStr)
+	claudeSummary := extractClaudeProse(diagRawStr)
 
 	if failureDetails != "" {
 		emitter.EmitLogLine("── Failure details ──")
