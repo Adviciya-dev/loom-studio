@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -986,7 +987,101 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 	} else {
 		emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
 	}
+	updateTestCaseResult(filePath, status)
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": status})
+}
+
+var (
+	reTestLastRun = regexp.MustCompile(`(?i)^\|\s*\*\*Last\s+Run\*\*\s*\|`)
+	reTestStatus  = regexp.MustCompile(`(?i)^\|\s*\*\*Status\*\*\s*\|`)
+	reH2Section   = regexp.MustCompile(`^##\s`)
+)
+
+// updateTestCaseResult writes the test outcome back into the test case markdown:
+//   - Patches/adds "Last Run" and "Status" rows in the ## Meta table.
+//   - Prepends a new row to a ## Test Run History table at the bottom (newest first).
+func updateTestCaseResult(filePath, status string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+
+	now := time.Now()
+	dateTime := fmt.Sprintf("%d-%02d-%02d %02d:%02d",
+		now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
+	statusLabel := "✅ Passed"
+	if status != "passed" {
+		statusLabel = "❌ Failed"
+	}
+
+	lines := strings.Split(string(data), "\n")
+
+	// ── 1. Patch ## Meta table ────────────────────────────────────────────
+	inMeta, metaEnd := false, -1
+	lastRunLine, statusLine := -1, -1
+
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "## Meta" {
+			inMeta = true
+			continue
+		}
+		if inMeta {
+			if reH2Section.MatchString(l) {
+				metaEnd = i
+				break
+			}
+			if reTestLastRun.MatchString(l) {
+				lastRunLine = i
+			}
+			if reTestStatus.MatchString(l) {
+				statusLine = i
+			}
+		}
+	}
+
+	patchLine := func(idx int, value string) {
+		parts := strings.Split(lines[idx], "|")
+		if len(parts) >= 3 {
+			parts[2] = " " + value + " "
+			lines[idx] = strings.Join(parts, "|")
+		}
+	}
+	insertBefore := func(idx int, row string) {
+		lines = append(lines[:idx], append([]string{row}, lines[idx:]...)...)
+		// keep subsequent indices consistent
+		if lastRunLine >= idx { lastRunLine++ }
+		if statusLine >= idx { statusLine++ }
+		if metaEnd >= idx { metaEnd++ }
+	}
+
+	if lastRunLine >= 0 {
+		patchLine(lastRunLine, dateTime)
+	} else if metaEnd > 0 {
+		insertBefore(metaEnd, fmt.Sprintf("| **Last Run** | %s |", dateTime))
+	}
+	if statusLine >= 0 {
+		patchLine(statusLine, statusLabel)
+	} else if metaEnd > 0 {
+		insertBefore(metaEnd, fmt.Sprintf("| **Status** | %s |", statusLabel))
+	}
+
+	content := strings.Join(lines, "\n")
+
+	// ── 2. ## Test Run History section (newest first) ─────────────────────
+	const histSep = "|-------------|--------|-------|"
+	newRow := fmt.Sprintf("| %s | %s | — |", dateTime, statusLabel)
+
+	if idx := strings.Index(content, "## Test Run History"); idx >= 0 {
+		if sepIdx := strings.Index(content[idx:], histSep); sepIdx >= 0 {
+			at := idx + sepIdx + len(histSep)
+			content = content[:at] + "\n" + newRow + content[at:]
+		}
+	} else {
+		const histHeader = "\n\n## Test Run History\n\n| Date & Time | Result | Notes |\n|-------------|--------|-------|"
+		content = strings.TrimRight(content, "\n") + histHeader + "\n" + newRow + "\n"
+	}
+
+	_ = os.WriteFile(filePath, []byte(content), 0o644)
 }
 
 // chatMu ensures only one harness chat runs at a time.

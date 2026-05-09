@@ -78,6 +78,15 @@ function QATestSuite() {
     if (selectedStatus !== 'idle') setSending(false)
   }, [selectedStatus])
 
+  // Reload file content after test completes so the updated Meta + history are shown
+  useEffect(() => {
+    if ((selectedStatus === 'passed' || selectedStatus === 'failed') && selectedTc) {
+      invoke<string>('read_file_content', { path: selectedTc.file_path })
+        .then(setTestContent)
+        .catch(() => {})
+    }
+  }, [selectedStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSelectTest = useCallback(
     async (tc: TestCase) => {
       if (selectedTc?.id === tc.id) return
