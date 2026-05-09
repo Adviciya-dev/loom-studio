@@ -29,6 +29,7 @@ function QATestSuite() {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
+  const [headed, setHeaded] = useState(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [splitPct, setSplitPct] = useState(() => {
@@ -120,8 +121,9 @@ function QATestSuite() {
       project_path: activeProject.path,
       test_id: selectedTc.id,
       file_path: selectedTc.file_path,
+      headed,
     }).catch(() => setSending(false))
-  }, [activeProject, selectedTc, sending, selectedStatus])
+  }, [activeProject, selectedTc, sending, selectedStatus, headed])
 
   const isDirty = isEditing && editContent !== testContent
 
@@ -276,6 +278,17 @@ function QATestSuite() {
                         ✎ Edit
                       </button>
                     )}
+                    <button
+                      className={`${styles.btnHeaded} ${headed ? styles.btnHeadedOn : ''}`}
+                      onClick={() => setHeaded((h) => !h)}
+                      title={
+                        headed
+                          ? 'Browser visible — click to run headless'
+                          : 'Run headless — click to show browser'
+                      }
+                    >
+                      {headed ? '👁 Show Browser' : '👁 Headless'}
+                    </button>
                     <button
                       className={`${styles.btnGenerate} ${sending ? styles.btnWorking : ''}`}
                       onClick={handleGenerateAndRun}

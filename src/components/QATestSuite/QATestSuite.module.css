@@ -292,6 +292,39 @@
   text-overflow: ellipsis;
 }
 
+/* ── Show Browser toggle ───────────────────────────── */
+
+.btnHeaded {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: transparent;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.btnHeaded:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.btnHeadedOn {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
+}
+
+.btnHeadedOn:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
 /* ── Generate & Run button ─────────────────────────── */
 
 .btnGenerate {

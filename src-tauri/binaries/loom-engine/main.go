@@ -726,7 +726,11 @@ func main() {
 				emitter.EmitEngineError("generate_and_run_test: missing file_path")
 				continue
 			}
-			go generateAndRunTest(emitter, projectPath, testID, filePath)
+			var headed bool
+			if raw, ok := cmd["headed"]; ok {
+				json.Unmarshal(raw, &headed) //nolint:errcheck
+			}
+			go generateAndRunTest(emitter, projectPath, testID, filePath, headed)
 
 		case "ping":
 			emitter.Emit("pong", nil)
@@ -899,7 +903,7 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 }
 
 
-func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath string) {
+func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 
 	// Register so kill / stop_test can cancel this goroutine
@@ -984,7 +988,15 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		"     The baseURL is already set to http://localhost:<PORT> in playwright config — use relative paths.\n" +
 		"   EVERY test name MUST contain: " + testID + "\n" +
 		"   Cover EVERY numbered step in the test case with its own test() block.\n" +
-		"7. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n\n" +
+		func() string {
+			if headed {
+				return "7. Run with visible browser so the tester can watch each screen:\n" +
+					"   npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line --headed\n" +
+					"   Also set slowMo in the playwright config use block: use: { headless: false, launchOptions: { slowMo: 600 } }\n" +
+					"   This lets the tester see every navigation, click, and assertion in real time.\n\n"
+			}
+			return "7. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n\n"
+		}() +
 
 		"═══════════════════════════════════════════════════════\n" +
 		"PHASE 4 — DIAGNOSE, FIX & RETRY (up to 2 retries)\n" +
