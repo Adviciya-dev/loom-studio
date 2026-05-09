@@ -955,7 +955,8 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		"═══════════════════════════════════════════════════════\n" +
 		"PHASE 3 — WRITE & RUN THE TEST\n" +
 		"═══════════════════════════════════════════════════════\n" +
-		"5. mkdir -p .loom-generated\n" +
+		"5. mkdir -p .loom-generated && rm -f .loom-generated/" + testID + ".spec.ts\n" +
+		"   (Always delete the old file — never reuse a stale test from a previous run.)\n" +
 		"6. Write the test to: .loom-generated/" + testID + ".spec.ts\n" +
 		"   FRONTEND/UI tests:\n" +
 		"     import { test, expect } from '@playwright/test';\n" +
@@ -1177,19 +1178,25 @@ func updateTestCaseResult(filePath, status string) {
 	_ = os.WriteFile(filePath, []byte(content), 0o644)
 }
 
-// extractClaudeProse extracts all prose text that Claude wrote (assistant "text"
-// blocks from the stream JSON). This gives the full investigation summary
-// Claude produced — server checks, Redis inspection, root-cause analysis, etc.
+// extractClaudeProse extracts all prose text that Claude wrote by scanning
+// only "assistant"-type NDJSON lines and pulling every "text":"..." value.
+// This handles any JSON key ordering and gives the full investigation log.
 func extractClaudeProse(rawStream string) string {
-	reTextVal := regexp.MustCompile(`"type"\s*:\s*"text"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	reText := regexp.MustCompile(`"text"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 	var parts []string
-	for _, m := range reTextVal.FindAllStringSubmatch(rawStream, -1) {
-		decoded := strings.ReplaceAll(m[1], `\n`, "\n")
-		decoded = strings.ReplaceAll(decoded, `\"`, `"`)
-		decoded = strings.ReplaceAll(decoded, `\\`, `\`)
-		decoded = strings.TrimSpace(decoded)
-		if decoded != "" {
-			parts = append(parts, decoded)
+	for _, line := range strings.Split(rawStream, "\n") {
+		if !strings.Contains(line, `"type":"assistant"`) &&
+			!strings.Contains(line, `"role":"assistant"`) {
+			continue
+		}
+		for _, m := range reText.FindAllStringSubmatch(line, -1) {
+			decoded := strings.ReplaceAll(m[1], `\n`, "\n")
+			decoded = strings.ReplaceAll(decoded, `\"`, `"`)
+			decoded = strings.ReplaceAll(decoded, `\\`, `\`)
+			decoded = strings.TrimSpace(decoded)
+			if len(decoded) > 15 { // skip tool names / short strings
+				parts = append(parts, decoded)
+			}
 		}
 	}
 	return strings.Join(parts, "\n\n")
