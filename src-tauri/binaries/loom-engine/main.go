@@ -961,10 +961,26 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		"     import { test, expect } from '@playwright/test';\n" +
 		"     Use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible() etc.\n" +
 		"     Include a playwright.config.ts webServer block if the server was started in phase 2.\n" +
-		"   BACKEND/API tests:\n" +
+		"   BACKEND/API tests — IMPORTANT structure rules:\n" +
 		"     import { test, expect } from '@playwright/test';\n" +
-		"     Use the `request` fixture: test('step', async ({ request }) => { const r = await request.post(...); expect(r.status()).toBe(200); })\n" +
-		"     Assert exact status codes, response body fields, and error codes from the test case steps.\n" +
+		"     Wrap ALL steps inside ONE test.describe.serial('" + testID + "', () => { ... })\n" +
+		"     Declare shared variables (tokens, ids) with `let` at the describe scope so earlier steps feed later ones.\n" +
+		"     Each test case step becomes one test() block inside the describe.\n" +
+		"     Example:\n" +
+		"       test.describe.serial('" + testID + "', () => {\n" +
+		"         let accessToken = '';\n" +
+		"         test('" + testID + " Step 1: ...', async ({ request }) => {\n" +
+		"           const r = await request.post('/auth/otp/send', { data: { phone: '+919876543210' } });\n" +
+		"           expect(r.status()).toBe(200);\n" +
+		"         });\n" +
+		"         test('" + testID + " Step 4: ...', async ({ request }) => {\n" +
+		"           const r = await request.post('/auth/otp/verify', { data: { phone: '+919876543210', otp: '123456' } });\n" +
+		"           expect(r.status()).toBe(200);\n" +
+		"           accessToken = (await r.json()).data.accessToken;  // shared for later steps\n" +
+		"         });\n" +
+		"       });\n" +
+		"     Use the `request` fixture for all HTTP calls — NOT curl inside test bodies.\n" +
+		"     The baseURL is already set to http://localhost:<PORT> in playwright config — use relative paths.\n" +
 		"   EVERY test name MUST contain: " + testID + "\n" +
 		"   Cover EVERY numbered step in the test case with its own test() block.\n" +
 		"7. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n\n" +
@@ -1043,7 +1059,9 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		status = "passed"
 	}
 
+	// Structured failure block (LOOM markers) + Claude's full investigation prose.
 	failureDetails := extractFailureDetails(rawStr)
+	claudeSummary := extractClaudeProse(rawStr)
 
 	if status == "passed" {
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
@@ -1058,7 +1076,7 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 			}
 			emitter.EmitLogLine("─────────────────────")
 		}
-		if bugID := createBugReport(projectPath, testID, filePath, failureDetails); bugID != "" {
+		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
 			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
 		}
 	}
@@ -1159,6 +1177,24 @@ func updateTestCaseResult(filePath, status string) {
 	_ = os.WriteFile(filePath, []byte(content), 0o644)
 }
 
+// extractClaudeProse extracts all prose text that Claude wrote (assistant "text"
+// blocks from the stream JSON). This gives the full investigation summary
+// Claude produced — server checks, Redis inspection, root-cause analysis, etc.
+func extractClaudeProse(rawStream string) string {
+	reTextVal := regexp.MustCompile(`"type"\s*:\s*"text"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	var parts []string
+	for _, m := range reTextVal.FindAllStringSubmatch(rawStream, -1) {
+		decoded := strings.ReplaceAll(m[1], `\n`, "\n")
+		decoded = strings.ReplaceAll(decoded, `\"`, `"`)
+		decoded = strings.ReplaceAll(decoded, `\\`, `\`)
+		decoded = strings.TrimSpace(decoded)
+		if decoded != "" {
+			parts = append(parts, decoded)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // extractFailureDetails pulls the text between LOOM:FAILURE_DETAILS_START and
 // LOOM:FAILURE_DETAILS_END from the raw Claude stream JSON. Falls back to
 // scanning for Playwright failure markers (×, Error:, Expected, Received)
@@ -1228,9 +1264,9 @@ func nextBugNumber(bugsDir string) int {
 }
 
 // createBugReport creates a bug markdown file under harness/bugs/ for a failed test.
-// failureDetails is optional — included in the report when non-empty.
+// failureDetails = structured LOOM marker block; claudeSummary = Claude's full investigation prose.
 // Returns the bug ID (e.g. "BUG-003") or "" on error.
-func createBugReport(projectPath, testID, testFilePath, failureDetails string) string {
+func createBugReport(projectPath, testID, testFilePath, failureDetails, claudeSummary string) string {
 	bugsDir := filepath.Join(projectPath, "harness", "bugs")
 	if err := os.MkdirAll(bugsDir, 0o755); err != nil {
 		return ""
@@ -1267,9 +1303,22 @@ func createBugReport(projectPath, testID, testFilePath, failureDetails string) s
 	dateTime := fmt.Sprintf("%d-%02d-%02d %02d:%02d",
 		now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
 
-	actualResult := "Test failed. Check the Output panel in Loom Studio for the full execution log."
+	// Build "Actual Result" section from structured details.
+	actualResult := "Test failed. See investigation notes below."
 	if failureDetails != "" {
 		actualResult = "Test failed with the following errors:\n\n```\n" + failureDetails + "\n```"
+	}
+
+	// Build "Investigation" section from Claude's full prose output.
+	investigationSection := ""
+	if claudeSummary != "" {
+		// Trim to a reasonable length so the bug file stays readable.
+		summary := claudeSummary
+		if len(summary) > 4000 {
+			summary = summary[:4000] + "\n… (truncated — see Output panel for full log)"
+		}
+		investigationSection = "## Investigation Notes\n\n" +
+			"*Auto-captured from Claude's QA run:*\n\n" + summary + "\n\n"
 	}
 
 	content := "# " + bugID + ": " + tcTitle + " — test failure\n\n" +
@@ -1293,6 +1342,7 @@ func createBugReport(projectPath, testID, testFilePath, failureDetails string) s
 		"All steps in [" + testID + "](" + tcRel + ") pass.\n\n" +
 		"## Actual Result\n\n" +
 		actualResult + "\n\n" +
+		investigationSection +
 		"## Fix Notes\n\n" +
 		"—\n\n" +
 		"## Progress Log\n\n" +
