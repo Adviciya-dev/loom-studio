@@ -900,7 +900,7 @@ func streamCmd(ctx context.Context, emitter *ipc.Emitter, c *exec.Cmd) (bool, st
 
 
 func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 
 	// Register so kill / stop_test can cancel this goroutine
 	testCancelMu.Lock()
@@ -925,27 +925,79 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath stri
 		return
 	}
 
-	prompt := "You are a QA automation engineer. Run this test case end-to-end using Playwright.\n\n" +
-		"Do these steps in order:\n" +
-		"1. Read package.json and find the dev server port. Check if the app is running:\n" +
-		"   curl -s -o /dev/null -w \"%{http_code}\" http://localhost:<PORT>\n" +
-		"   If not running, warn the user clearly but continue.\n" +
-		"2. Check Playwright: npx playwright --version\n" +
+	prompt := "You are an autonomous QA engineer inside Loom Studio. " +
+		"The tester knows nothing about servers, ports, or tooling — you handle EVERYTHING.\n\n" +
+
+		"═══════════════════════════════════════════════════════\n" +
+		"PHASE 1 — UNDERSTAND THE TEST\n" +
+		"═══════════════════════════════════════════════════════\n" +
+		"Read the test case below. Classify it:\n" +
+		"  • FRONTEND/UI — needs a browser (Playwright page interactions)\n" +
+		"  • BACKEND/API — tests HTTP endpoints directly (use Playwright request fixture or curl)\n" +
+		"  • HYBRID      — both\n\n" +
+
+		"═══════════════════════════════════════════════════════\n" +
+		"PHASE 2 — FIX THE ENVIRONMENT (do this before writing any test)\n" +
+		"═══════════════════════════════════════════════════════\n" +
+		"1. Find every service the test needs:\n" +
+		"   - Read package.json scripts, .env files, docker-compose.yml, README to find ports and start commands.\n" +
+		"   - For each required service check: curl -s -o /dev/null -w \"%{http_code}\" http://localhost:<PORT>/health\n" +
+		"     or curl http://localhost:<PORT> — any 2xx/3xx means it's up.\n" +
+		"2. If a service is NOT running:\n" +
+		"   - Find the correct start command (e.g. pnpm dev, npm run start, node dist/main.js).\n" +
+		"   - Start it in the background: <start-command> &\n" +
+		"   - Wait for it: for i in $(seq 1 30); do curl -s http://localhost:<PORT> && break || sleep 1; done\n" +
+		"   - Confirm it's up before continuing.\n" +
+		"3. Check Playwright: npx playwright --version\n" +
 		"   If missing: npm install --save-dev @playwright/test && npx playwright install chromium\n" +
-		"3. Create directory: mkdir -p .loom-generated\n" +
-		"4. Write a complete Playwright TypeScript test to: .loom-generated/" + testID + ".spec.ts\n" +
-		"   - import { test, expect } from '@playwright/test';\n" +
-		"   - Test name must include the test ID: " + testID + "\n" +
-		"   - Write specific assertions based on the Expected Result\n" +
-		"5. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n" +
-		"6. After the run, output a summary:\n" +
-		"   - If ALL tests passed: write one line exactly: LOOM:PASSED\n" +
-		"   - If ANY test failed:\n" +
-		"     * Write 'LOOM:FAILED' on its own line\n" +
-		"     * Then write 'LOOM:FAILURE_DETAILS_START'\n" +
-		"     * List each failing test: test name, the exact assertion error, expected value, received value\n" +
-		"     * Write 'LOOM:FAILURE_DETAILS_END'\n" +
-		"     * Do NOT retry or fix — just report the result accurately\n\n" +
+		"4. Read .env / .env.local / .env.example. Note any missing required variables and warn, but continue.\n\n" +
+
+		"═══════════════════════════════════════════════════════\n" +
+		"PHASE 3 — WRITE & RUN THE TEST\n" +
+		"═══════════════════════════════════════════════════════\n" +
+		"5. mkdir -p .loom-generated\n" +
+		"6. Write the test to: .loom-generated/" + testID + ".spec.ts\n" +
+		"   FRONTEND/UI tests:\n" +
+		"     import { test, expect } from '@playwright/test';\n" +
+		"     Use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible() etc.\n" +
+		"     Include a playwright.config.ts webServer block if the server was started in phase 2.\n" +
+		"   BACKEND/API tests:\n" +
+		"     import { test, expect } from '@playwright/test';\n" +
+		"     Use the `request` fixture: test('step', async ({ request }) => { const r = await request.post(...); expect(r.status()).toBe(200); })\n" +
+		"     Assert exact status codes, response body fields, and error codes from the test case steps.\n" +
+		"   EVERY test name MUST contain: " + testID + "\n" +
+		"   Cover EVERY numbered step in the test case with its own test() block.\n" +
+		"7. Run: npx playwright test .loom-generated/" + testID + ".spec.ts --reporter=line\n\n" +
+
+		"═══════════════════════════════════════════════════════\n" +
+		"PHASE 4 — DIAGNOSE, FIX & RETRY (up to 2 retries)\n" +
+		"═══════════════════════════════════════════════════════\n" +
+		"8. If the run FAILS, for EACH failing test:\n" +
+		"   a. Read the exact error. Identify the ROOT CAUSE category:\n" +
+		"      [ENV]  Infrastructure issue — server down, wrong port, missing env var, network error\n" +
+		"      [TEST] Test script bug — wrong selector, wrong assertion, wrong URL in test code\n" +
+		"      [BUG]  Real application bug — server returned wrong status/body, feature not implemented\n" +
+		"   b. For [ENV] and [TEST] failures: fix the issue and run again (retry up to 2 times total).\n" +
+		"      - [ENV]: start the service, fix the URL, export the env var, then rerun.\n" +
+		"      - [TEST]: fix the test script (wrong assertion, wrong field name, etc.), then rerun.\n" +
+		"   c. For [BUG] failures: do NOT retry endlessly. Document the bug clearly and move on.\n\n" +
+
+		"═══════════════════════════════════════════════════════\n" +
+		"PHASE 5 — REPORT\n" +
+		"═══════════════════════════════════════════════════════\n" +
+		"9. Write a plain-English summary:\n" +
+		"   - Services started / already running\n" +
+		"   - Fixes applied (env issues, test script corrections)\n" +
+		"   - Which steps passed, which failed\n" +
+		"   - For each failure: root cause category ([ENV]/[TEST]/[BUG]), exact error, expected vs actual\n" +
+		"10. Output the result marker on its own line:\n" +
+		"    LOOM:PASSED   — every step passed after all retries\n" +
+		"    LOOM:FAILED   — one or more steps still fail\n" +
+		"    Then output:\n" +
+		"    LOOM:FAILURE_DETAILS_START\n" +
+		"    <for each failure: step name, root cause category, exact error, expected, actual>\n" +
+		"    LOOM:FAILURE_DETAILS_END\n\n" +
+
 		"TEST CASE:\n" + string(content)
 
 	cmd := exec.CommandContext(ctx,
