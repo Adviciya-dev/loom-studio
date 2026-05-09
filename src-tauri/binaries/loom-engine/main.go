@@ -933,41 +933,39 @@ func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed b
 	if headed {
 		headedConfig = "\n   - Set: use: { headless: false, launchOptions: { slowMo: 600 } }"
 	}
-	return "You are a senior QA engineer. Your ONLY job in this invocation is to WRITE FILES.\n" +
-		"Do NOT run any commands. Do NOT start any servers. Just write the files.\n\n" +
+	return "You are a QA engineer. Write two files IMMEDIATELY. Do NOT read any source files.\n" +
+		"Do NOT explore the codebase. Do NOT run any commands. Just write the files now.\n\n" +
 
-		"## Feature Under Test\n\n" +
+		"## Everything you need is below — do not look for more information\n\n" +
+
+		"### Feature Under Test\n\n" +
 		featureSection + "\n\n" +
 
-		"## Test Case Specification\n\n" +
+		"### Test Case Specification\n\n" +
 		testCaseContent + "\n\n" +
 
-		"## Instructions\n\n" +
-		"1. Read package.json (and any .env files) to understand the tech stack, server ports,\n" +
-		"   and start commands.\n\n" +
-		"2. Classify the test as: FRONTEND/UI, BACKEND/API, or HYBRID.\n\n" +
-		"3. Delete any stale file first:\n" +
-		"     rm -f .loom-generated/" + testID + ".spec.ts\n" +
-		"   Then write the test to: .loom-generated/" + testID + ".spec.ts\n\n" +
-		"   FRONTEND/UI tests:\n" +
-		"   - import { test, expect } from '@playwright/test';\n" +
-		"   - Use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible()\n" +
-		"   - Cover EVERY numbered step as its own test() block\n\n" +
-		"   BACKEND/API tests:\n" +
-		"   - import { test, expect } from '@playwright/test';\n" +
-		"   - Wrap ALL steps in test.describe.serial('" + testID + "', () => { ... })\n" +
-		"   - Declare shared variables (tokens, IDs) with `let` at describe scope\n" +
-		"   - Each numbered step → one test() block; use the `request` fixture for HTTP calls\n" +
-		"   - Do NOT use curl inside test bodies\n\n" +
-		"   Every test() name MUST contain the string \"" + testID + "\"\n\n" +
-		"4. Write or update the playwright config at: .loom-generated/playwright.config.ts\n" +
-		"   - Set baseURL to the correct localhost port\n" +
-		"   - Add a webServer block with the dev server start command and port so Playwright\n" +
-		"     manages the server lifecycle automatically (no manual server startup needed)" +
-		headedConfig + "\n\n" +
-		"5. When both files are written and saved, output exactly one line:\n" +
-		"   LOOM:GENERATED\n" +
-		"   (nothing else after this marker)\n"
+		"## Step 1 — Write .loom-generated/" + testID + ".spec.ts\n\n" +
+		"Use the test case steps above. Rules:\n" +
+		"- import { test, expect } from '@playwright/test';\n" +
+		"- Wrap ALL steps in: test.describe.serial('" + testID + "', () => { ... })\n" +
+		"- Every test() name MUST contain \"" + testID + "\"\n" +
+		"- One test() block per numbered step in the test case\n" +
+		"- FRONTEND/UI: use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible()\n" +
+		"- BACKEND/API: use the `request` fixture — NOT curl inside test bodies\n" +
+		"- Declare shared variables (tokens, IDs) with `let` at describe scope\n" +
+		"- Use flexible locators: prefer getByRole/getByText over fragile data-testid selectors\n" +
+		"- For UI steps involving real SMS/OTP: mock the API call with page.route() if needed\n\n" +
+
+		"## Step 2 — Write .loom-generated/playwright.config.ts\n\n" +
+		"- baseURL: http://localhost:3000 (or the port from the test case preconditions)\n" +
+		"- Find the dev server start command from the preconditions section of the test case\n" +
+		"- Add webServer block so Playwright starts the server automatically\n" +
+		"- retries: 1\n" +
+		"- workers: 1" + headedConfig + "\n\n" +
+
+		"## Step 3 — Output the marker\n\n" +
+		"After writing both files, output EXACTLY this on its own line and nothing else:\n" +
+		"LOOM:GENERATED\n"
 }
 
 // buildDiagnosisPrompt constructs the focused prompt for Claude call #2.
