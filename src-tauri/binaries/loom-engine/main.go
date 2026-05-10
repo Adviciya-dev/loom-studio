@@ -988,17 +988,6 @@ func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed b
 		"### Test Case Specification\n\n" +
 		testCaseContent + "\n\n" +
 
-		"## Step 0 — Read component source (UI tests only, do this FIRST, max 2 min)\n\n" +
-		"If this is a FRONTEND/UI test, before writing the spec:\n" +
-		"1. Read the pages/routes mentioned in the test case steps (e.g. auth/welcome/page.tsx,\n" +
-		"   app/(main)/page.tsx, or similar). Look for the actual element text, roles, and any\n" +
-		"   existing data-testid attributes.\n" +
-		"2. Use what you find to write accurate locators. If the component has no data-testid,\n" +
-		"   use getByRole / getByText / getByLabel instead — do NOT invent data-testid values.\n" +
-		"3. If the component file is not found, fall back to role/text locators from the test\n" +
-		"   case description.\n" +
-		"BACKEND/API tests: skip Step 0 entirely.\n\n" +
-
 		"## Step 1 — Write .loom-generated/" + testID + ".spec.ts\n\n" +
 		"Rules:\n" +
 		"- import { test, expect } from '@playwright/test';\n" +
