@@ -645,7 +645,9 @@ function ChatPanel({
             <button
               key={qa.id}
               className={styles.quickBtn}
-              onClick={() => setInput(qa.prompt)}
+              onClick={() =>
+                setInput((prev) => (prev.trim() ? prev.trimEnd() + '\n\n' + qa.prompt : qa.prompt))
+              }
               disabled={sending}
             >
               {qa.label}
@@ -655,7 +657,9 @@ function ChatPanel({
             <div key={t.id} className={styles.customTplChip}>
               <button
                 className={styles.quickBtn}
-                onClick={() => setInput(t.prompt)}
+                onClick={() =>
+                  setInput((prev) => (prev.trim() ? prev.trimEnd() + '\n\n' + t.prompt : t.prompt))
+                }
                 disabled={sending}
               >
                 {t.label}
