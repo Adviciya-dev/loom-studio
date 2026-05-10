@@ -959,7 +959,8 @@ func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed b
 		"## Step 2 — Write .loom-generated/playwright.config.ts\n\n" +
 		"- baseURL: http://localhost:3000 (or the port from the test case preconditions)\n" +
 		"- Find the dev server start command from the preconditions section of the test case\n" +
-		"- Add webServer block so Playwright starts the server automatically\n" +
+		"- Add webServer block — ALWAYS include `reuseExistingServer: true` so Playwright\n" +
+		"  reuses a server that is already running instead of failing with EADDRINUSE\n" +
 		"- retries: 1\n" +
 		"- workers: 1" + headedConfig + "\n\n" +
 
@@ -988,13 +989,14 @@ func buildDiagnosisPrompt(testID, testOutput string) string {
 
 // classifyFailure does cheap string-match pre-classification before invoking Claude.
 func classifyFailure(output string) string {
-	// ENV: server not reachable
+	// ENV: server not reachable or port conflict
 	envPatterns := []string{
 		"ECONNREFUSED", "ERR_CONNECTION_REFUSED",
 		"net::ERR_CONNECTION_REFUSED", // Playwright Chromium format
 		"connect ECONNREFUSED",
-		"ETIMEDOUT", "ENOTFOUND",
-		"ERR_NETWORK_CHANGED",
+		"ETIMEDOUT", "ENOTFOUND", "ERR_NETWORK_CHANGED",
+		"EADDRINUSE", "address already in use", // port conflict
+		"is already in use",
 	}
 	for _, p := range envPatterns {
 		if strings.Contains(output, p) {
@@ -1010,6 +1012,21 @@ func classifyFailure(output string) string {
 	for _, p := range testPatterns {
 		if strings.Contains(output, p) {
 			return "TEST"
+		}
+	}
+	return "BUG"
+}
+
+// diagnosisCategory parses the "Category: [ENV|TEST|BUG]" line from a
+// LOOM:FAILURE_DETAILS block, so Claude's diagnosis can override a BUG
+// classification and avoid creating false-positive bug reports.
+func diagnosisCategory(failureDetails string) string {
+	for _, line := range strings.Split(failureDetails, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "Category:") {
+			cat := strings.TrimSpace(strings.TrimPrefix(t, "Category:"))
+			cat = strings.Trim(cat, "[]")
+			return strings.ToUpper(cat)
 		}
 	}
 	return "BUG"
@@ -1214,8 +1231,17 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 		emitter.EmitLogLine("─────────────────────")
 	}
 
-	if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
-		emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+	// Re-check Claude's diagnosis category — don't create a bug for ENV/TEST.
+	diagCat := diagnosisCategory(failureDetails)
+	switch diagCat {
+	case "ENV":
+		emitter.EmitLogLine("⚠ Environment issue confirmed — no bug report created")
+	case "TEST":
+		emitter.EmitLogLine("⚠ Test script issue confirmed — no bug report created")
+	default:
+		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
+			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+		}
 	}
 	updateTestCaseResult(filePath, "failed")
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
