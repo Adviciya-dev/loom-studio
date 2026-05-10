@@ -1324,8 +1324,8 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 	diagCat := diagnosisCategory(failureDetails)
 	switch diagCat {
 	case "ENV":
-		// Claude identified an ENV issue (may be wrong port, wrong config, etc.) —
-		// attempt to auto-fix using the structured diagnosis, then retry once.
+		// Claude identified an ENV issue — attempt to auto-fix using the structured
+		// diagnosis, then retry once. If it still fails, create a bug report.
 		emitter.EmitLogLine("⚠ Environment issue identified — attempting auto-fix…")
 		fixInput := failureDetails
 		if fixInput == "" {
@@ -1341,7 +1341,12 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 				return
 			}
 			emitter.EmitLogLine(fmt.Sprintf("✗ %s still failing after env fix", testID))
-			cleanOutput = retryOutput
+			// Re-classify the new output — if it's a real bug now, create a report.
+			if classifyFailure(retryOutput) == "BUG" {
+				if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
+					emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+				}
+			}
 		} else {
 			emitter.EmitLogLine("✗ Could not auto-fix environment — check server config manually")
 		}
