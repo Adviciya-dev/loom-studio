@@ -580,7 +580,7 @@ pub fn read_bugs(path: String) -> Vec<HashMap<String, String>> {
                     .map_or(false, |n| n.starts_with("BUG-"))
         })
         .collect();
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by(|a, b| b.file_name().cmp(&a.file_name())); // newest first
     entries
         .into_iter()
         .filter_map(|entry| {
@@ -654,7 +654,7 @@ pub fn list_scripts(path: String) -> Vec<HashMap<String, String>> {
                     .map_or(false, |n| n.ends_with(".spec.ts"))
         })
         .collect();
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by(|a, b| b.file_name().cmp(&a.file_name())); // newest first
     entries
         .into_iter()
         .map(|entry| {
