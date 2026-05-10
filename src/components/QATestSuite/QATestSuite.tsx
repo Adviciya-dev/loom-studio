@@ -195,6 +195,23 @@ function QATestSuite() {
     })
   }, [activeProject, selectedTc, sending, headed])
 
+  const handleRunScript = useCallback(async () => {
+    if (!activeProject || !selectedScript || sending) return
+    setSending(true)
+    setPendingAction('run')
+    const tc = testCases.find((t) => t.id === selectedScript.test_id)
+    await engineCommand({
+      action: 'rerun_test',
+      project_path: activeProject.path,
+      test_id: selectedScript.test_id,
+      file_path: tc?.file_path ?? '',
+      headed,
+    }).catch(() => {
+      setSending(false)
+      setPendingAction(null)
+    })
+  }, [activeProject, selectedScript, sending, headed, testCases])
+
   const isDirty = isEditing && editContent !== testContent
 
   function handleStartEdit() {
@@ -416,6 +433,18 @@ function QATestSuite() {
                     </span>
                   </div>
                   <div className={styles.headerActions}>
+                    {activeTab === 'scripts' &&
+                      (sending ? (
+                        <span className={styles.runningLabel}>● Running…</span>
+                      ) : (
+                        <button
+                          className={styles.btnGenerate}
+                          onClick={handleRunScript}
+                          title="Run this script"
+                        >
+                          ▶ Run
+                        </button>
+                      ))}
                     <button
                       className={styles.btnEdit}
                       onClick={() =>
