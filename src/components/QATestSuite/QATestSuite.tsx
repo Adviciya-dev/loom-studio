@@ -435,15 +435,33 @@ function QATestSuite() {
                   <div className={styles.headerActions}>
                     {activeTab === 'scripts' &&
                       (sending ? (
-                        <span className={styles.runningLabel}>● Running…</span>
+                        <div className={styles.runningControls}>
+                          <span className={styles.runningLabel}>● Running…</span>
+                          <button className={styles.btnStop} onClick={handleStop}>
+                            ■ Stop
+                          </button>
+                        </div>
                       ) : (
-                        <button
-                          className={styles.btnGenerate}
-                          onClick={handleRunScript}
-                          title="Run this script"
-                        >
-                          ▶ Run
-                        </button>
+                        <>
+                          <button
+                            className={`${styles.btnHeaded} ${headed ? styles.btnHeadedOn : ''}`}
+                            onClick={() => setHeaded((h) => !h)}
+                            title={
+                              headed
+                                ? 'Browser visible — click for headless'
+                                : 'Headless — click to show browser'
+                            }
+                          >
+                            {headed ? '👁 Show Browser' : '👁 Headless'}
+                          </button>
+                          <button
+                            className={styles.btnGenerate}
+                            onClick={handleRunScript}
+                            title="Run this script"
+                          >
+                            ▶ Run
+                          </button>
+                        </>
                       ))}
                     <button
                       className={styles.btnEdit}
@@ -500,16 +518,18 @@ function QATestSuite() {
                       {saving ? 'Saving…' : 'Save'}
                     </button>
                   </>
-                ) : selectedStatus === 'running' ? (
+                ) : sending ? (
                   <div className={styles.runningControls}>
-                    <span className={styles.runningLabel}>● Claude running…</span>
+                    <span className={styles.runningLabel}>
+                      {pendingAction === 'generate' ? '⟳ Generating…' : '● Running…'}
+                    </span>
                     <button className={styles.btnStop} onClick={handleStop}>
                       ■ Stop
                     </button>
                   </div>
                 ) : (
                   <>
-                    {testContent && !sending && (
+                    {testContent && (
                       <button className={styles.btnEdit} onClick={handleStartEdit}>
                         ✎ Edit
                       </button>
@@ -517,7 +537,6 @@ function QATestSuite() {
                     <button
                       className={`${styles.btnHeaded} ${headed ? styles.btnHeadedOn : ''}`}
                       onClick={() => setHeaded((h) => !h)}
-                      disabled={sending}
                       title={
                         headed
                           ? 'Browser visible — click for headless'
@@ -527,20 +546,18 @@ function QATestSuite() {
                       {headed ? '👁 Show Browser' : '👁 Headless'}
                     </button>
                     <button
-                      className={`${styles.btnRerun} ${pendingAction === 'generate' ? styles.btnWorking2 : ''}`}
+                      className={styles.btnRerun}
                       onClick={handleGenerate}
-                      disabled={sending}
                       title="Generate Playwright spec from test case (no execution)"
                     >
-                      {pendingAction === 'generate' ? '⟳ Generating…' : '⚙ Generate'}
+                      ⚙ Generate
                     </button>
                     <button
-                      className={`${styles.btnGenerate} ${pendingAction === 'run' ? styles.btnWorking : ''}`}
+                      className={styles.btnGenerate}
                       onClick={handleRun}
-                      disabled={sending}
                       title="Run the existing spec (skips generation)"
                     >
-                      {pendingAction === 'run' ? '⟳ Running…' : '▶ Run'}
+                      ▶ Run
                     </button>
                   </>
                 )}
