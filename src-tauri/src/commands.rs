@@ -559,3 +559,114 @@ pub fn open_in_editor(path: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Reads all BUG-*.md files from `{path}/harness/bugs/` and returns their metadata.
+#[tauri::command]
+pub fn read_bugs(path: String) -> Vec<HashMap<String, String>> {
+    let bugs_dir = Path::new(&path).join("harness").join("bugs");
+    if !bugs_dir.is_dir() {
+        return vec![];
+    }
+    let mut entries: Vec<_> = fs::read_dir(&bugs_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let p = e.path();
+            p.extension().map_or(false, |ext| ext == "md")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.starts_with("BUG-"))
+        })
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            let p = entry.path();
+            let file_path = p.to_string_lossy().to_string();
+            let content = fs::read_to_string(&p).ok()?;
+            let mut map = HashMap::new();
+            map.insert("file_path".to_string(), file_path);
+            let mut id = String::new();
+            let mut title = String::new();
+            let mut status = String::new();
+            let mut severity = String::new();
+            let mut test_case = String::new();
+            let mut found_date = String::new();
+            for line in content.lines() {
+                let t = line.trim();
+                if title.is_empty() && t.starts_with("# ") {
+                    let heading = t[2..].trim();
+                    if let Some(pos) = heading.find(": ") {
+                        id = heading[..pos].trim().to_string();
+                        title = heading[pos + 2..].trim().to_string();
+                    }
+                }
+                if t.starts_with('|') && !t.starts_with("|---") {
+                    let cols: Vec<&str> = t.split('|').collect();
+                    if cols.len() >= 3 {
+                        let key = cols[1].trim().replace("**", "").to_lowercase();
+                        let val = cols[2].trim().to_string();
+                        match key.as_str() {
+                            "status" => status = val,
+                            "severity" => severity = val,
+                            "test case" => {
+                                // Extract TC-NNN from markdown link [TC-NNN](path)
+                                let v = val.trim_start_matches('[');
+                                test_case = v.split(']').next().unwrap_or(&val).to_string();
+                            }
+                            "found date" => found_date = val,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            map.insert("id".to_string(), id);
+            map.insert("title".to_string(), title);
+            map.insert("status".to_string(), status);
+            map.insert("severity".to_string(), severity);
+            map.insert("test_case".to_string(), test_case);
+            map.insert("found_date".to_string(), found_date);
+            Some(map)
+        })
+        .collect()
+}
+
+/// Lists all *.spec.ts files under `{path}/.loom-generated/`.
+#[tauri::command]
+pub fn list_scripts(path: String) -> Vec<HashMap<String, String>> {
+    let dir = Path::new(&path).join(".loom-generated");
+    if !dir.is_dir() {
+        return vec![];
+    }
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let p = e.path();
+            p.extension().map_or(false, |ext| ext == "ts")
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map_or(false, |n| n.ends_with(".spec.ts"))
+        })
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    entries
+        .into_iter()
+        .map(|entry| {
+            let p = entry.path();
+            let file_path = p.to_string_lossy().to_string();
+            let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let test_id = name.replace(".spec.ts", "");
+            let mut map = HashMap::new();
+            map.insert("file_path".to_string(), file_path);
+            map.insert("name".to_string(), name);
+            map.insert("test_id".to_string(), test_id);
+            map
+        })
+        .collect()
+}

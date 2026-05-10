@@ -77,6 +77,75 @@
   padding: 1px 7px;
 }
 
+/* ── Tab bar ───────────────────────────────────────── */
+
+.tabBar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tabBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+  letter-spacing: 0.03em;
+}
+
+.tabBtn:hover {
+  color: var(--text-secondary);
+}
+
+.tabBtnActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tabCount {
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 5px;
+  color: var(--text-muted);
+}
+
+.tabBtnActive .tabCount {
+  background: var(--accent-subtle);
+  border-color: rgba(124, 108, 252, 0.3);
+  color: var(--accent);
+}
+
+.bugDot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f87171;
+}
+
+.scriptDot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4d9cf6;
+}
+
 /* ── Filter chips ──────────────────────────────────── */
 
 .chips {

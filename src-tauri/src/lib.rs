@@ -80,6 +80,8 @@ pub fn run() {
             commands::gh_default_branch,
             commands::gh_pr_list,
             commands::get_platform,
+            commands::read_bugs,
+            commands::list_scripts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

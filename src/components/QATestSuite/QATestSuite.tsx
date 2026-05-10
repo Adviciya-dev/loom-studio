@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import { onSpecGenerated } from '@/lib/events'
-import type { TestCase, TestCaseStatus } from '@/types/index'
+import type { TestCase, TestCaseStatus, BugItem, ScriptItem } from '@/types/index'
 import styles from './QATestSuite.module.css'
 
 const ALL = 'all'
@@ -19,8 +19,15 @@ function QATestSuite() {
   const { state, dispatch } = useApp()
   const { activeProject, testCases, testStatuses } = state
 
+  const [activeTab, setActiveTab] = useState<'tests' | 'bugs' | 'scripts'>('tests')
   const [typeFilter, setTypeFilter] = useState(ALL)
   const [loading, setLoading] = useState(false)
+  const [bugs, setBugs] = useState<BugItem[]>([])
+  const [scripts, setScripts] = useState<ScriptItem[]>([])
+  const [selectedBug, setSelectedBug] = useState<BugItem | null>(null)
+  const [selectedScript, setSelectedScript] = useState<ScriptItem | null>(null)
+  const [panelContent, setPanelContent] = useState('')
+  const [panelLoading, setPanelLoading] = useState(false)
 
   const [selectedTc, setSelectedTc] = useState<TestCase | null>(null)
   const [testContent, setTestContent] = useState('')
@@ -57,6 +64,20 @@ function QATestSuite() {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
+
+  useEffect(() => {
+    if (!activeProject || activeTab !== 'bugs') return
+    invoke<BugItem[]>('read_bugs', { path: activeProject.path })
+      .then(setBugs)
+      .catch(() => setBugs([]))
+  }, [activeProject?.id, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!activeProject || activeTab !== 'scripts') return
+    invoke<ScriptItem[]>('list_scripts', { path: activeProject.path })
+      .then(setScripts)
+      .catch(() => setScripts([]))
+  }, [activeProject?.id, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activeProject) return
@@ -231,54 +252,143 @@ function QATestSuite() {
     <div className={styles.split} ref={containerRef}>
       {/* ── Left panel ─────────────────────────────────── */}
       <div className={styles.left} style={{ width: `${splitPct}%` }}>
-        <div className={styles.leftHeader}>
-          <span className={styles.leftTitle}>
-            Tests
-            {testCases.length > 0 && <span className={styles.count}>{filtered.length}</span>}
-          </span>
+        {/* Tab bar */}
+        <div className={styles.tabBar}>
+          {(['tests', 'bugs', 'scripts'] as const).map((tab) => (
+            <button
+              key={tab}
+              className={`${styles.tabBtn} ${activeTab === tab ? styles.tabBtnActive : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'tests' ? 'Tests' : tab === 'bugs' ? 'Bugs' : 'Scripts'}
+              {tab === 'tests' && testCases.length > 0 && (
+                <span className={styles.tabCount}>{filtered.length}</span>
+              )}
+              {tab === 'bugs' && bugs.length > 0 && (
+                <span className={styles.tabCount}>{bugs.length}</span>
+              )}
+              {tab === 'scripts' && scripts.length > 0 && (
+                <span className={styles.tabCount}>{scripts.length}</span>
+              )}
+            </button>
+          ))}
         </div>
 
-        {types.length > 1 && (
-          <div className={styles.chips}>
-            {types.map((t) => (
-              <button
-                key={t}
-                className={`${styles.chip} ${typeFilter === t ? styles.chipActive : ''}`}
-                onClick={() => setTypeFilter(t)}
-              >
-                {t === ALL ? 'All' : t}
-              </button>
-            ))}
-          </div>
+        {/* Tests tab */}
+        {activeTab === 'tests' && (
+          <>
+            {types.length > 1 && (
+              <div className={styles.chips}>
+                {types.map((t) => (
+                  <button
+                    key={t}
+                    className={`${styles.chip} ${typeFilter === t ? styles.chipActive : ''}`}
+                    onClick={() => setTypeFilter(t)}
+                  >
+                    {t === ALL ? 'All' : t}
+                  </button>
+                ))}
+              </div>
+            )}
+            {testCases.length === 0 ? (
+              <div className={styles.leftEmpty}>
+                <p>No test cases found.</p>
+                <p>
+                  Add <code>.md</code> files to <code>harness/test_cases/</code>
+                </p>
+              </div>
+            ) : (
+              <div className={styles.list}>
+                {filtered.map((tc) => {
+                  const st: TestCaseStatus | 'idle' = testStatuses[tc.id] ?? 'idle'
+                  const isActive = selectedTc?.id === tc.id
+                  return (
+                    <button
+                      key={tc.id}
+                      className={`${styles.listItem} ${isActive ? styles.listItemActive : ''}`}
+                      onClick={() => handleSelectTest(tc)}
+                    >
+                      <span className={`${styles.dot} ${statusColor(st)}`} />
+                      <span className={styles.itemId}>{tc.id}</span>
+                      <span className={styles.itemTitle}>{tc.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
 
-        {testCases.length === 0 ? (
-          <div className={styles.leftEmpty}>
-            <p>No test cases found.</p>
-            <p>
-              Add <code>.md</code> files to
-              <br />
-              <code>harness/test_cases/</code>
-            </p>
-          </div>
-        ) : (
-          <div className={styles.list}>
-            {filtered.map((tc) => {
-              const st: TestCaseStatus | 'idle' = testStatuses[tc.id] ?? 'idle'
-              const isActive = selectedTc?.id === tc.id
-              return (
-                <button
-                  key={tc.id}
-                  className={`${styles.listItem} ${isActive ? styles.listItemActive : ''}`}
-                  onClick={() => handleSelectTest(tc)}
-                >
-                  <span className={`${styles.dot} ${statusColor(st)}`} />
-                  <span className={styles.itemId}>{tc.id}</span>
-                  <span className={styles.itemTitle}>{tc.title}</span>
-                </button>
-              )
-            })}
-          </div>
+        {/* Bugs tab */}
+        {activeTab === 'bugs' && (
+          <>
+            {bugs.length === 0 ? (
+              <div className={styles.leftEmpty}>
+                <p>No bug reports found.</p>
+                <p>Bugs are created automatically when tests fail.</p>
+              </div>
+            ) : (
+              <div className={styles.list}>
+                {bugs.map((bug) => (
+                  <button
+                    key={bug.id}
+                    className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
+                    onClick={async () => {
+                      setSelectedBug(bug)
+                      setSelectedScript(null)
+                      setPanelLoading(true)
+                      const content = await invoke<string>('read_file_content', {
+                        path: bug.file_path,
+                      }).catch(() => '')
+                      setPanelContent(content)
+                      setPanelLoading(false)
+                    }}
+                  >
+                    <span className={styles.bugDot} />
+                    <span className={styles.itemId}>{bug.id}</span>
+                    <span className={styles.itemTitle}>{bug.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Scripts tab */}
+        {activeTab === 'scripts' && (
+          <>
+            {scripts.length === 0 ? (
+              <div className={styles.leftEmpty}>
+                <p>No scripts generated yet.</p>
+                <p>
+                  Use <strong>⚙ Generate</strong> on a test case to create a spec.
+                </p>
+              </div>
+            ) : (
+              <div className={styles.list}>
+                {scripts.map((s) => (
+                  <button
+                    key={s.file_path}
+                    className={`${styles.listItem} ${selectedScript?.file_path === s.file_path ? styles.listItemActive : ''}`}
+                    onClick={async () => {
+                      setSelectedScript(s)
+                      setSelectedBug(null)
+                      setPanelLoading(true)
+                      const content = await invoke<string>('read_file_content', {
+                        path: s.file_path,
+                      }).catch(() => '')
+                      setPanelContent(content)
+                      setPanelLoading(false)
+                    }}
+                  >
+                    <span className={styles.scriptDot} />
+                    <span className={styles.itemId}>{s.test_id}</span>
+                    <span className={styles.itemTitle}>{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -286,12 +396,60 @@ function QATestSuite() {
 
       {/* ── Right panel ────────────────────────────────── */}
       <div className={styles.right}>
-        {!selectedTc ? (
+        {/* Bug / Script viewer */}
+        {(activeTab === 'bugs' || activeTab === 'scripts') && (
+          <>
+            {!selectedBug && !selectedScript ? (
+              <div className={styles.noSelection}>
+                <span className={styles.noSelectionIcon}>←</span>
+                <span>Select a {activeTab === 'bugs' ? 'bug report' : 'script'}</span>
+              </div>
+            ) : (
+              <>
+                <div className={styles.rightHeader}>
+                  <div className={styles.rightHeaderInfo}>
+                    <span className={styles.detailId}>
+                      {activeTab === 'bugs' ? selectedBug?.id : selectedScript?.test_id}
+                    </span>
+                    <span className={styles.detailTitle}>
+                      {activeTab === 'bugs' ? selectedBug?.title : selectedScript?.name}
+                    </span>
+                  </div>
+                  <div className={styles.headerActions}>
+                    <button
+                      className={styles.btnEdit}
+                      onClick={() =>
+                        invoke('open_in_editor', {
+                          path:
+                            activeTab === 'bugs'
+                              ? selectedBug?.file_path
+                              : selectedScript?.file_path,
+                        }).catch(() => {})
+                      }
+                    >
+                      Open in Editor
+                    </button>
+                  </div>
+                </div>
+                <div className={styles.rightBody}>
+                  {panelLoading ? (
+                    <div className={styles.loadingText}>Loading…</div>
+                  ) : (
+                    <pre className={styles.contentBlock}>{panelContent}</pre>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Test case viewer (existing) */}
+        {activeTab === 'tests' && !selectedTc ? (
           <div className={styles.noSelection}>
             <span className={styles.noSelectionIcon}>←</span>
             <span>Select a test case</span>
           </div>
-        ) : (
+        ) : activeTab === 'tests' && selectedTc ? (
           <>
             <div className={styles.rightHeader}>
               <div className={styles.rightHeaderInfo}>
@@ -417,7 +575,7 @@ function QATestSuite() {
               </div>
             </div>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   )

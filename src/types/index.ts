@@ -93,6 +93,22 @@ export interface TestCase {
 export const TEST_CASE_STATUSES = ['idle', 'running', 'passed', 'failed'] as const
 export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number]
 
+export interface BugItem {
+  id: string
+  title: string
+  status: string
+  severity: string
+  test_case: string
+  found_date: string
+  file_path: string
+}
+
+export interface ScriptItem {
+  test_id: string
+  name: string
+  file_path: string
+}
+
 export interface TestRunResult {
   total: number
   passed: number
