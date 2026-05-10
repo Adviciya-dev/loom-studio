@@ -255,8 +255,25 @@ function ChatPanel({
   const sendTimeRef = useRef<number>(0)
   const [elapsed, setElapsed] = useState(0)
 
+  const [inputHeight, setInputHeight] = useState(120)
   const listRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  function onInputResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = inputHeight
+    function onMove(me: MouseEvent) {
+      const delta = startY - me.clientY
+      setInputHeight(Math.max(72, Math.min(480, startH + delta)))
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
   const beforeSnapshotRef = useRef<Set<string>>(new Set())
   const touchedFilesRef = useRef<Set<string>>(new Set())
   const [modalPath, setModalPath] = useState<string | null>(null)
@@ -471,9 +488,6 @@ function ChatPanel({
 
   function onInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setInput(e.target.value)
-    const el = e.target
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 220) + 'px'
   }
 
   const defaultActions = [
@@ -693,14 +707,19 @@ function ChatPanel({
         </div>
 
         <div className={styles.inputBar}>
+          <div
+            className={styles.inputResizeHandle}
+            onMouseDown={onInputResizeMouseDown}
+            title="Drag to resize"
+          />
           <textarea
             ref={textareaRef}
             className={styles.textarea}
+            style={{ height: inputHeight, maxHeight: inputHeight }}
             placeholder="Ask Claude anything… (Enter to send, Shift+Enter for new line)"
             value={input}
             onChange={onInputChange}
             onKeyDown={onKeyDown}
-            rows={3}
             disabled={sending}
           />
           <div className={styles.inputFooter}>
