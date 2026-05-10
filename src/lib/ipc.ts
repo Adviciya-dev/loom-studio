@@ -82,6 +82,13 @@ export type EngineCommand =
       linked_task?: string
       headed?: boolean
     }
+  | {
+      action: 'rerun_test'
+      project_path: string
+      test_id: string
+      file_path: string
+      headed?: boolean
+    }
   | { action: 'stop_test' }
 
 export type RawTaskFile = { filename: string; content: string }

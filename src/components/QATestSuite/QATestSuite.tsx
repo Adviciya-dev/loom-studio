@@ -113,6 +113,18 @@ function QATestSuite() {
     setSending(false)
   }, [])
 
+  const handleRerun = useCallback(async () => {
+    if (!activeProject || !selectedTc || sending || selectedStatus === 'running') return
+    setSending(true)
+    await engineCommand({
+      action: 'rerun_test',
+      project_path: activeProject.path,
+      test_id: selectedTc.id,
+      file_path: selectedTc.file_path,
+      headed,
+    }).catch(() => setSending(false))
+  }, [activeProject, selectedTc, sending, selectedStatus, headed])
+
   const handleGenerateAndRun = useCallback(async () => {
     if (!activeProject || !selectedTc || sending || selectedStatus === 'running') return
     setSending(true)
@@ -289,6 +301,14 @@ function QATestSuite() {
                       }
                     >
                       {headed ? '👁 Show Browser' : '👁 Headless'}
+                    </button>
+                    <button
+                      className={styles.btnRerun}
+                      onClick={handleRerun}
+                      disabled={sending}
+                      title="Re-run existing spec without regenerating"
+                    >
+                      ↺ Re-run
                     </button>
                     <button
                       className={`${styles.btnGenerate} ${sending ? styles.btnWorking : ''}`}

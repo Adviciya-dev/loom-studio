@@ -736,6 +736,26 @@ func main() {
 			}
 			go generateAndRunTest(emitter, projectPath, testID, filePath, linkedTaskID, headed)
 
+		case "rerun_test":
+			var projectPath, testID, filePath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("rerun_test: missing project_path")
+				continue
+			}
+			if err := json.Unmarshal(cmd["test_id"], &testID); err != nil || testID == "" {
+				emitter.EmitEngineError("rerun_test: missing test_id")
+				continue
+			}
+			if err := json.Unmarshal(cmd["file_path"], &filePath); err != nil || filePath == "" {
+				emitter.EmitEngineError("rerun_test: missing file_path")
+				continue
+			}
+			var headed bool
+			if raw, ok := cmd["headed"]; ok {
+				json.Unmarshal(raw, &headed) //nolint:errcheck
+			}
+			go rerunTest(emitter, projectPath, testID, filePath, headed)
+
 		case "ping":
 			emitter.Emit("pong", nil)
 
@@ -944,8 +964,19 @@ func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed b
 		"### Test Case Specification\n\n" +
 		testCaseContent + "\n\n" +
 
+		"## Step 0 — Read component source (UI tests only, do this FIRST, max 2 min)\n\n" +
+		"If this is a FRONTEND/UI test, before writing the spec:\n" +
+		"1. Read the pages/routes mentioned in the test case steps (e.g. auth/welcome/page.tsx,\n" +
+		"   app/(main)/page.tsx, or similar). Look for the actual element text, roles, and any\n" +
+		"   existing data-testid attributes.\n" +
+		"2. Use what you find to write accurate locators. If the component has no data-testid,\n" +
+		"   use getByRole / getByText / getByLabel instead — do NOT invent data-testid values.\n" +
+		"3. If the component file is not found, fall back to role/text locators from the test\n" +
+		"   case description.\n" +
+		"BACKEND/API tests: skip Step 0 entirely.\n\n" +
+
 		"## Step 1 — Write .loom-generated/" + testID + ".spec.ts\n\n" +
-		"Use the test case steps above. Rules:\n" +
+		"Rules:\n" +
 		"- import { test, expect } from '@playwright/test';\n" +
 		"- Wrap ALL steps in: test.describe.serial('" + testID + "', () => { ... })\n" +
 		"- Every test() name MUST contain \"" + testID + "\"\n" +
@@ -953,15 +984,18 @@ func buildGenerationPrompt(testID, testCaseContent, taskContent string, headed b
 		"- FRONTEND/UI: use page.goto(), page.click(), page.fill(), expect(locator).toBeVisible()\n" +
 		"- BACKEND/API: use the `request` fixture — NOT curl inside test bodies\n" +
 		"- Declare shared variables (tokens, IDs) with `let` at describe scope\n" +
-		"- Use flexible locators: prefer getByRole/getByText over fragile data-testid selectors\n" +
-		"- For UI steps involving real SMS/OTP: mock the API call with page.route() if needed\n\n" +
+		"- Locator priority: 1) getByRole  2) getByText/getByLabel  3) data-testid (only if\n" +
+		"  confirmed present in the component source)  — NEVER invent data-testid values\n" +
+		"- For UI steps that require SMS/OTP: intercept the API with page.route() and return\n" +
+		"  a mock response { data: { message: 'OTP sent' } } so no real SMS is needed.\n" +
+		"  For OTP verify steps: similarly mock POST /auth/otp/verify to return tokens.\n\n" +
 
 		"## Step 2 — Write .loom-generated/playwright.config.ts\n\n" +
 		"- baseURL: http://localhost:3000 (or the port from the test case preconditions)\n" +
 		"- Find the dev server start command from the preconditions section of the test case\n" +
 		"- Add webServer block — ALWAYS include `reuseExistingServer: true` so Playwright\n" +
 		"  reuses a server that is already running instead of failing with EADDRINUSE\n" +
-		"- retries: 1\n" +
+		"- retries: 0  (serial tests must not retry — a retry reruns all steps from the start)\n" +
 		"- workers: 1" + headedConfig + "\n\n" +
 
 		"## Step 3 — Output the marker\n\n" +
@@ -1241,6 +1275,102 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 	default:
 		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
 			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+		}
+	}
+	updateTestCaseResult(filePath, "failed")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+}
+
+// rerunTest skips the generation phase and runs the existing .spec.ts directly.
+// Used by the "Re-run" button when the spec is already generated and correct.
+func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
+	specPath := filepath.Join(projectPath, ".loom-generated", testID+".spec.ts")
+	if _, err := os.Stat(specPath); err != nil {
+		emitter.EmitLogLine("✗ No existing spec found for " + testID + " — use Generate & Run first")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	testCancelMu.Lock()
+	testCancelFn = cancel
+	testCancelMu.Unlock()
+	defer func() {
+		cancel()
+		testCancelMu.Lock()
+		testCancelFn = nil
+		testCancelMu.Unlock()
+		emitter.Emit("engine_status", "idle")
+	}()
+
+	emitter.Emit("engine_status", "running")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
+	emitter.EmitLogLine("⟳ Re-running existing spec (no regeneration)…")
+
+	runArgs := []string{
+		"playwright", "test",
+		".loom-generated/" + testID + ".spec.ts",
+		"--config", ".loom-generated/playwright.config.ts",
+		"--reporter=line",
+	}
+	if headed {
+		runArgs = append(runArgs, "--headed")
+	}
+	runCmd := exec.CommandContext(ctx, npxBin(), runArgs...)
+	runCmd.Dir = projectPath
+	runCmd.Env = append(os.Environ(), "CI=true")
+
+	passed, runOutput := streamCmd(ctx, emitter, runCmd)
+	cleanOutput := stripANSI(runOutput)
+
+	if passed {
+		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
+		updateTestCaseResult(filePath, "passed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed"})
+		return
+	}
+
+	emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
+	category := classifyFailure(cleanOutput)
+
+	switch category {
+	case "ENV":
+		emitter.EmitLogLine("⚠ Environment failure: connection refused — check that the server is running")
+	case "TEST":
+		emitter.EmitLogLine("⚠ Test script error — use Generate & Run to regenerate the spec")
+	default:
+		diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
+		defer diagCancel()
+		emitter.EmitLogLine("⟳ Analysing failure…")
+		diagPrompt := buildDiagnosisPrompt(testID, last100Lines(cleanOutput))
+		diagCmd := exec.CommandContext(diagCtx, "claude",
+			"--dangerously-skip-permissions", "--print", "--verbose",
+			"--output-format", "stream-json", diagPrompt)
+		diagCmd.Dir = projectPath
+		var diagRaw bytes.Buffer
+		if diagStdout, err := diagCmd.StdoutPipe(); err == nil {
+			diagStderr, _ := diagCmd.StderrPipe()
+			if diagCmd.Start() == nil {
+				process.NewStreamer(io.TeeReader(diagStdout, &diagRaw), diagStderr).Stream(emitter)
+				diagCmd.Wait() //nolint:errcheck
+			}
+		}
+		diagRawStr := diagRaw.String()
+		failureDetails := extractFailureDetails(diagRawStr)
+		claudeSummary := extractClaudeProse(diagRawStr)
+		if failureDetails != "" {
+			emitter.EmitLogLine("── Failure details ──")
+			for _, line := range strings.Split(failureDetails, "\n") {
+				if l := strings.TrimSpace(line); l != "" {
+					emitter.EmitLogLine("  " + l)
+				}
+			}
+			emitter.EmitLogLine("─────────────────────")
+		}
+		if diagnosisCategory(failureDetails) != "ENV" && diagnosisCategory(failureDetails) != "TEST" {
+			if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
+				emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
+			}
 		}
 	}
 	updateTestCaseResult(filePath, "failed")
