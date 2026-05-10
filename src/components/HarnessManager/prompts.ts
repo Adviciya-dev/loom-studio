@@ -170,22 +170,30 @@ Create all feature files now in a single pass. Do not ask for confirmation.
 Be concrete and specific throughout — a developer reading a file must have zero ambiguity about what to build. Avoid vague phrases like "handle errors appropriately" or "show a loading state". Always specify exact behaviour.`
 
 export const TEST_CASE_PROMPT = (projectName: string) =>
-  `You are generating a single test case file for "${projectName}" from an attached task file.
+  `You are generating a single comprehensive test case file for "${projectName}" from one or more attached task files.
 
-**The user has attached a task file** (e.g. \`harness/tasks/.../TASK-XXX.md\`).
-Read the attached file to understand the feature, then determine the next available TC number by listing \`harness/test_cases/\`.
+**The user has attached one or more task files** (e.g. frontend, backend, and/or integration tasks for the same feature).
+Read ALL attached files before writing anything — the test case must cover every acceptance criterion across all of them.
 
 > ⚠️ Save the output file to \`harness/test_cases/TC-XXX.md\` ONLY — never inside \`apps/\`, \`src/\`, or any source directory.
 
 ---
 
-### Step 1 — Read the attached task file
-Extract:
+### Step 1 — Read ALL attached task files
+For each attached file, extract:
 - Task ID and title (from the \`# TASK-XXX:\` heading)
 - Description and scope
 - Every acceptance criterion
 - Technical notes (API endpoints, field names, response shapes, roles, constraints)
 - Sprint number
+
+Combine all extracted information into a unified picture of the feature before writing the test case.
+Common patterns when multiple tasks are attached:
+- **Frontend task** → UI screens, user interactions, validation, navigation flows
+- **Backend task** → API endpoints, request/response shapes, error codes, business logic
+- **Integration task** → end-to-end data flow, auth tokens, FE ↔ BE wiring
+
+The \`Linked Task\` field in the Meta table should list ALL attached task IDs (comma-separated).
 
 ### Step 2 — Determine the TC number
 Run: \`ls harness/test_cases/ | grep "^TC-" | sort | tail -1\`
@@ -205,7 +213,7 @@ Use this exact structure:
 | **Type** | e2e |
 | **Priority** | P1 |
 | **Assignee** | — |
-| **Linked Task** | TASK-XXX |
+| **Linked Task** | TASK-XXX, TASK-YYY, TASK-ZZZ (list all attached task IDs) |
 | **Linked Bug** | — |
 | **Sprint** | Sprint N |
 | **Created** | YYYY-MM-DD |
