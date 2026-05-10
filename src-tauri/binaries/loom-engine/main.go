@@ -1174,25 +1174,74 @@ func runGeneration(ctx context.Context, emitter *ipc.Emitter, projectPath, testI
 	return true
 }
 
-// runDiagnose runs the test, then diagnoses and reports any failure.
-// Used by both generateAndRunTest and rerunTest.
-func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
-	runArgs := []string{
+// runPlaywright executes npx playwright test for testID and returns (passed, cleanOutput).
+func runPlaywright(ctx context.Context, emitter *ipc.Emitter, projectPath, testID string, headed bool) (bool, string) {
+	args := []string{
 		"playwright", "test",
 		".loom-generated/" + testID + ".spec.ts",
 		"--config", ".loom-generated/playwright.config.ts",
 		"--reporter=line",
 	}
 	if headed {
-		runArgs = append(runArgs, "--headed")
+		args = append(args, "--headed")
 	}
-	runCmd := exec.CommandContext(ctx, npxBin(), runArgs...)
-	runCmd.Dir = projectPath
-	runCmd.Env = append(os.Environ(), "CI=true")
+	c := exec.CommandContext(ctx, npxBin(), args...)
+	c.Dir = projectPath
+	c.Env = append(os.Environ(), "CI=true")
+	passed, out := streamCmd(ctx, emitter, c)
+	return passed, stripANSI(out)
+}
 
+// fixEnvWithClaude asks Claude to start the required server when an ENV failure is
+// detected. Returns true if Claude outputs LOOM:SERVER_READY within 3 minutes.
+func fixEnvWithClaude(ctx context.Context, emitter *ipc.Emitter, projectPath, failureOutput string) bool {
+	emitter.EmitLogLine("⟳ Asking Claude to start the required server…")
+
+	prompt := "You are a dev-environment engineer. A Playwright test just failed because the server was not running.\n\n" +
+		"Failure output:\n" + last100Lines(failureOutput) + "\n\n" +
+		"Your job:\n" +
+		"1. Read package.json (and any monorepo workspace config) to find the correct start command\n" +
+		"   for the specific server that is missing (frontend dev server, API server, etc.).\n" +
+		"2. Start ONLY that server in the background (e.g. pnpm dev & or npm run start &).\n" +
+		"3. Wait until the server is ready by polling with curl:\n" +
+		"   for i in $(seq 1 30); do curl -s http://localhost:<PORT> > /dev/null && break; sleep 1; done\n" +
+		"4. Verify the server is responding on the correct port.\n" +
+		"5. If the server started successfully, output exactly: LOOM:SERVER_READY\n" +
+		"   If it could not be started, output exactly: LOOM:SERVER_FAILED and explain briefly why.\n\n" +
+		"Do NOT start any server that is already running. Do NOT install dependencies.\n" +
+		"Do NOT run the Playwright tests yourself — just start the server.\n"
+
+	fixCtx, fixCancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer fixCancel()
+
+	fixCmd := exec.CommandContext(fixCtx,
+		"claude", "--dangerously-skip-permissions", "--print", "--verbose",
+		"--output-format", "stream-json", prompt)
+	fixCmd.Dir = projectPath
+
+	var fixRaw bytes.Buffer
+	fixStdout, err := fixCmd.StdoutPipe()
+	if err != nil {
+		emitter.EmitLogLine("⚠ Cannot start Claude for env fix: " + err.Error())
+		return false
+	}
+	fixStderr, _ := fixCmd.StderrPipe()
+	if err := fixCmd.Start(); err != nil {
+		emitter.EmitLogLine("⚠ Cannot start Claude for env fix: " + err.Error())
+		return false
+	}
+	process.NewStreamer(io.TeeReader(fixStdout, &fixRaw), fixStderr).Stream(emitter)
+	fixCmd.Wait() //nolint:errcheck
+
+	return strings.Contains(fixRaw.String(), "LOOM:SERVER_READY")
+}
+
+// runDiagnose runs the test, attempts ENV auto-fix + retry on first failure,
+// then diagnoses and reports any remaining failure.
+// Used by both generateAndRunTest and rerunTest.
+func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
 	emitter.EmitLogLine("⟳ Running Playwright tests…")
-	passed, runOutput := streamCmd(ctx, emitter, runCmd)
-	cleanOutput := stripANSI(runOutput)
+	passed, cleanOutput := runPlaywright(ctx, emitter, projectPath, testID, headed)
 
 	if passed {
 		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
@@ -1204,9 +1253,30 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 	emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
 	category := classifyFailure(cleanOutput)
 
+	// ENV: try to auto-fix (start the server) then retry once.
+	if category == "ENV" {
+		if fixEnvWithClaude(ctx, emitter, projectPath, cleanOutput) {
+			emitter.EmitLogLine("✓ Server started — retrying test…")
+			passed, cleanOutput = runPlaywright(ctx, emitter, projectPath, testID, headed)
+			if passed {
+				emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
+				updateTestCaseResult(filePath, "passed")
+				emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed"})
+				return
+			}
+			emitter.EmitLogLine(fmt.Sprintf("✗ %s still failing after server fix", testID))
+			category = classifyFailure(cleanOutput)
+		} else {
+			emitter.EmitLogLine("✗ Could not start server — check the project's dev server command")
+			updateTestCaseResult(filePath, "failed")
+			emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+			return
+		}
+	}
+
 	switch category {
 	case "ENV":
-		emitter.EmitLogLine("⚠ Environment failure: connection refused — check that the server is running")
+		emitter.EmitLogLine("⚠ Environment failure persists after fix attempt — check server manually")
 		updateTestCaseResult(filePath, "failed")
 		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
 		return
