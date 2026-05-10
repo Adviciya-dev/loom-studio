@@ -1197,19 +1197,20 @@ func runPlaywright(ctx context.Context, emitter *ipc.Emitter, projectPath, testI
 func fixEnvWithClaude(ctx context.Context, emitter *ipc.Emitter, projectPath, failureOutput string) bool {
 	emitter.EmitLogLine("⟳ Asking Claude to start the required server…")
 
-	prompt := "You are a dev-environment engineer. A Playwright test just failed because the server was not running.\n\n" +
-		"Failure output:\n" + last100Lines(failureOutput) + "\n\n" +
-		"Your job:\n" +
-		"1. Read package.json (and any monorepo workspace config) to find the correct start command\n" +
-		"   for the specific server that is missing (frontend dev server, API server, etc.).\n" +
-		"2. Start ONLY that server in the background (e.g. pnpm dev & or npm run start &).\n" +
-		"3. Wait until the server is ready by polling with curl:\n" +
-		"   for i in $(seq 1 30); do curl -s http://localhost:<PORT> > /dev/null && break; sleep 1; done\n" +
-		"4. Verify the server is responding on the correct port.\n" +
-		"5. If the server started successfully, output exactly: LOOM:SERVER_READY\n" +
-		"   If it could not be started, output exactly: LOOM:SERVER_FAILED and explain briefly why.\n\n" +
-		"Do NOT start any server that is already running. Do NOT install dependencies.\n" +
-		"Do NOT run the Playwright tests yourself — just start the server.\n"
+	prompt := "You are a dev-environment engineer. A Playwright test failed due to an environment issue.\n\n" +
+		"Issue details:\n" + last100Lines(failureOutput) + "\n\n" +
+		"Fix the issue by doing exactly ONE of these:\n\n" +
+		"A. WRONG PORT / WRONG CONFIG — if the playwright config points to the wrong port or URL:\n" +
+		"   - Read .loom-generated/playwright.config.ts and identify the wrong baseURL\n" +
+		"   - Read package.json / .env to find the correct frontend dev server port\n" +
+		"   - Update .loom-generated/playwright.config.ts with the correct baseURL\n\n" +
+		"B. SERVER NOT RUNNING — if the correct server is simply not started:\n" +
+		"   - Read package.json (and any workspace config) for the start command\n" +
+		"   - Start it in the background: <start-command> &\n" +
+		"   - Wait for it: for i in $(seq 1 30); do curl -s http://localhost:<PORT> > /dev/null && break; sleep 1; done\n\n" +
+		"After fixing, verify the correct server is responding, then output exactly: LOOM:SERVER_READY\n" +
+		"If you cannot fix it, output exactly: LOOM:SERVER_FAILED and explain why.\n\n" +
+		"Do NOT install dependencies. Do NOT run Playwright yourself. Fix the environment only.\n"
 
 	fixCtx, fixCancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer fixCancel()
@@ -1323,7 +1324,27 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 	diagCat := diagnosisCategory(failureDetails)
 	switch diagCat {
 	case "ENV":
-		emitter.EmitLogLine("⚠ Environment issue confirmed — no bug report created")
+		// Claude identified an ENV issue (may be wrong port, wrong config, etc.) —
+		// attempt to auto-fix using the structured diagnosis, then retry once.
+		emitter.EmitLogLine("⚠ Environment issue identified — attempting auto-fix…")
+		fixInput := failureDetails
+		if fixInput == "" {
+			fixInput = cleanOutput
+		}
+		if fixEnvWithClaude(ctx, emitter, projectPath, fixInput) {
+			emitter.EmitLogLine("✓ Environment fixed — retrying test…")
+			passed, retryOutput := runPlaywright(ctx, emitter, projectPath, testID, headed)
+			if passed {
+				emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
+				updateTestCaseResult(filePath, "passed")
+				emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed"})
+				return
+			}
+			emitter.EmitLogLine(fmt.Sprintf("✗ %s still failing after env fix", testID))
+			cleanOutput = retryOutput
+		} else {
+			emitter.EmitLogLine("✗ Could not auto-fix environment — check server config manually")
+		}
 	case "TEST":
 		emitter.EmitLogLine("⚠ Test script issue confirmed — use Generate to regenerate the spec")
 	default:
