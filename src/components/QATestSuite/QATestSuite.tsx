@@ -102,10 +102,13 @@ function QATestSuite() {
     if (selectedStatus !== 'idle') setSending(false)
   }, [selectedStatus])
 
-  // Clear pendingAction when engine goes idle
+  // Clear sending + pendingAction when engine goes idle
   const { engineStatus } = state
   useEffect(() => {
-    if (engineStatus === 'idle') setPendingAction(null)
+    if (engineStatus === 'idle') {
+      setPendingAction(null)
+      setSending(false)
+    }
   }, [engineStatus])
 
   // Reload spec content after generation so it's visible in the right panel
