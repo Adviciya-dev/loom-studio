@@ -170,110 +170,116 @@ Create all feature files now in a single pass. Do not ask for confirmation.
 Be concrete and specific throughout — a developer reading a file must have zero ambiguity about what to build. Avoid vague phrases like "handle errors appropriately" or "show a loading state". Always specify exact behaviour.`
 
 export const TEST_CASE_PROMPT = (projectName: string) =>
-  `You are generating a detailed, executable test case document for "${projectName}" based on the attached task file.
+  `You are generating a single test case file for "${projectName}" from an attached task file.
 
-**Input:** The user has attached a task file from \`harness/tasks/\`. Use every sub-task and acceptance criterion in that file as the source of truth for what to test.
+**The user has attached a task file** (e.g. \`harness/tasks/.../TASK-XXX.md\`).
+Read the attached file to understand the feature, then determine the next available TC number by listing \`harness/test_cases/\`.
 
-> ⚠️ CRITICAL — OUTPUT LOCATION RULE:
-> ALL output files MUST be created inside \`harness/test_cases/\` — NEVER inside \`apps/\`, \`src/\`, \`packages/\`, or any application source directory.
-> The task file may list files like \`apps/admin/src/__tests__/\` — IGNORE those paths. They are the implementation files, not the test case document location.
-
-**Instructions — follow every step:**
-
-### Step 1: Identify the feature and output path
-Read the task file title to determine the feature name (e.g. "Admin App · Meetings" → \`admin-meetings\`).
-
-Create the output directory and file at EXACTLY:
-\`harness/test_cases/<feature-name>/TEST-CASES-<feature-name>.md\`
-
-Run \`mkdir -p harness/test_cases/<feature-name>\` first.
-
-Do NOT create any files outside of \`harness/test_cases/\`.
-
-### Step 2: Generate test cases for every test type
-For each test type listed in the QA task sub-tasks, generate a full set of test cases. Every test case must include:
-- **TC-ID** (e.g. TC-SMOKE-001, TC-FUNC-001, TC-REG-001, TC-E2E-001, etc.)
-- **Title** — one-line description
-- **Priority** — P0 / P1 / P2
-- **Preconditions** — what must be true before the test runs (env, test data, auth state)
-- **Steps** — numbered, exact actions the tester takes
-- **Expected result** — what should happen after each step
-- **Pass/Fail criteria** — single clear statement of what "pass" means
-
-### Step 3: Cover all test types from the QA task
-Generate test cases for EVERY category below (skip none):
-
-#### 🔵 Smoke Tests (TC-SMOKE-XXX)
-Basic sanity checks — feature loads and primary happy path works.
-
-#### 🟢 Functional Tests (TC-FUNC-XXX)
-One test case per acceptance criterion from TASK-001 (frontend) and TASK-002 (backend).
-Cover every user-facing action, form, button, and state.
-
-#### 🟡 Regression Tests (TC-REG-XXX)
-Test the areas listed in the QA task that could be broken by this feature.
-Include at least one test per existing feature that shares code or routes with this feature.
-
-#### 🔷 Integration Tests (TC-INT-XXX)
-FE ↔ BE data flow: verify real API calls, correct request/response shapes, auth headers.
-
-#### 🎨 UI Layer Tests (TC-UI-XXX)
-- Visual: layout, typography, colours, icons match design
-- Responsive: mobile (375px), tablet (768px), desktop (1280px+)
-- Accessibility: keyboard nav, screen reader labels, focus order, contrast ratios
-- Cross-browser: Chrome, Firefox, Safari
-
-#### ⚠️ Edge Case Tests (TC-EDGE-XXX)
-Empty states, max-length inputs, special characters, concurrent sessions, offline mode,
-expired tokens, large datasets, rapid repeated actions.
-
-#### ❌ Error Handling Tests (TC-ERR-XXX)
-Network failure (500, 503), invalid input (400), unauthorised (401/403),
-not found (404), timeout, partial response.
-
-#### 🔒 Security Tests (TC-SEC-XXX)
-Auth bypass, direct URL access without login, IDOR (accessing other users' data),
-XSS via input fields, CSRF, sensitive data in logs/URLs, session expiry.
-
-#### ⚡ Performance Tests (TC-PERF-XXX)
-Page load under 3G, API response time under load (50 concurrent users),
-large list rendering (1000+ items), memory leak check (idle 10 min).
-
-#### 🔄 End-to-End Tests (TC-E2E-XXX)
-Full user journeys — from app launch through the entire feature flow to completion.
-Cover at least: happy path, error recovery path, and edge-case path.
+> ⚠️ Save the output file to \`harness/test_cases/TC-XXX.md\` ONLY — never inside \`apps/\`, \`src/\`, or any source directory.
 
 ---
 
-### Output format per test case:
+### Step 1 — Read the attached task file
+Extract:
+- Task ID and title (from the \`# TASK-XXX:\` heading)
+- Description and scope
+- Every acceptance criterion
+- Technical notes (API endpoints, field names, response shapes, roles, constraints)
+- Sprint number
 
+### Step 2 — Determine the TC number
+Run: \`ls harness/test_cases/ | grep "^TC-" | sort | tail -1\`
+Increment by 1 to get the next TC number (e.g. TC-024 if TC-023 exists).
+
+### Step 3 — Generate and save \`harness/test_cases/TC-XXX.md\`
+
+Use this exact structure:
+
+\`\`\`markdown
+# TC-XXX: <App/Module · Feature Area>
+
+## Meta
+| Field | Value |
+|-------|-------|
+| **Status** | 📋 To Do |
+| **Type** | e2e |
+| **Priority** | P1 |
+| **Assignee** | — |
+| **Linked Task** | TASK-XXX |
+| **Linked Bug** | — |
+| **Sprint** | Sprint N |
+| **Created** | YYYY-MM-DD |
+
+---
+
+## Description
+<2–3 sentences: what this test verifies, which user role, and why it matters.
+Base this entirely on the task's Description and Acceptance Criteria.>
+
+---
+
+## Preconditions
+- <Service/app is running and accessible>
+- <Auth state required (logged in as role X, or unauthenticated)>
+- <Required env vars / credentials set>
+- <Any seed data or prior state needed>
+
+---
+
+## Test Steps
+| Step | Action | Expected |
+|:----:|--------|----------|
+| 1 | <Exact action — route to navigate to, button to click, field to fill, API to call> | <Exact expected outcome — status code, UI element, text, redirect> |
+| 2 | ... | ... |
+
+<Cover EVERY acceptance criterion from the task.
+  — Happy path first
+  — Then validation/error cases
+  — Then edge cases
+  — For API tests: include exact request body, expected status code, and response fields
+  — For UI tests: include exact route, visible element text, and interaction>
+
+---
+
+## Expected Result
+<One paragraph — what a fully passing run looks like end-to-end.>
+
+---
+
+## Actual Result
+—
+
+---
+
+## Test Data
 \`\`\`
-### TC-<TYPE>-<NUMBER>: <Title>
-
-**Priority:** P0 / P1 / P2
-**Type:** <Smoke | Functional | Regression | Integration | UI | Edge Case | Error | Security | Performance | E2E>
-**Feature:** <feature name>
-
-**Preconditions:**
-- User is logged in as [role]
-- Test data: [specify]
-- Environment: [staging / local]
-
-**Steps:**
-1. [Exact action]
-2. [Exact action]
-3. [Exact action]
-
-**Expected Result:**
-[What should happen — be specific about UI state, data, response]
-
-**Pass Criteria:** [Single clear statement]
-**Fail Criteria:** [What would make this fail]
+<Any test credentials, phone numbers, IDs, payloads, or constants a tester needs.
+  Pull exact values from the task's Technical Notes and test data sections.>
 \`\`\`
 
 ---
 
-Generate ALL test cases now in a single pass. Do not skip any test type. Be specific — a tester with no prior context should be able to execute each test case exactly as written.`
+## Automation
+| Field | Value |
+|-------|-------|
+| **Status** | Not automated |
+| **File** | — |
+
+---
+
+## Notes
+- <Known manual-only steps (real SMS, hardware, third-party console)>
+- <Relevant API doc links or Swagger paths>
+- <Any role or permission constraints>
+\`\`\`
+
+---
+
+### Rules
+- Every acceptance criterion → at least one test step.
+- Steps must be specific enough for Playwright to automate: exact routes, button labels, field names, API endpoints, status codes.
+- Do NOT add a "Test Run History" section — it is auto-generated by Loom.
+- After saving, confirm the file path and list how many steps were generated.`
 
 export const TASK_PROMPT = (projectName: string) =>
   `You are helping generate structured task files for a feature in "${projectName}".

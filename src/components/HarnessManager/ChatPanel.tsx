@@ -481,7 +481,7 @@ function ChatPanel({
     { id: '_arch', label: '🏗 Architecture', prompt: ARCHITECTURE_PROMPT(projectName) },
     { id: '_feature', label: '✨ Feature Brief', prompt: FEATURE_PROMPT(projectName) },
     { id: '_task', label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
-    { id: '_test', label: '🧪 Test Cases', prompt: TEST_CASE_PROMPT(projectName) },
+    { id: '_test', label: '🧪 Generate Test Case', prompt: TEST_CASE_PROMPT(projectName) },
   ]
 
   function openAddTemplate() {
