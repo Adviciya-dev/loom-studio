@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
+import { onSpecGenerated } from '@/lib/events'
 import type { TestCase, TestCaseStatus } from '@/types/index'
 import styles from './QATestSuite.module.css'
 
@@ -30,6 +31,7 @@ function QATestSuite() {
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [headed, setHeaded] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'generate' | 'run' | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [splitPct, setSplitPct] = useState(() => {
@@ -79,6 +81,31 @@ function QATestSuite() {
     if (selectedStatus !== 'idle') setSending(false)
   }, [selectedStatus])
 
+  // Clear pendingAction when engine goes idle
+  const { engineStatus } = state
+  useEffect(() => {
+    if (engineStatus === 'idle') setPendingAction(null)
+  }, [engineStatus])
+
+  // Reload spec content after generation so it's visible in the right panel
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    onSpecGenerated((testId) => {
+      if (selectedTc?.id === testId) {
+        invoke<string>('read_file_content', {
+          path: `${activeProject?.path}/.loom-generated/${testId}.spec.ts`,
+        })
+          .then(setTestContent)
+          .catch(() => {})
+      }
+    }).then((fn) => {
+      unlisten = fn
+    })
+    return () => {
+      unlisten?.()
+    }
+  }, [selectedTc?.id, activeProject?.path]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reload file content after test completes so the updated Meta + history are shown
   useEffect(() => {
     if ((selectedStatus === 'passed' || selectedStatus === 'failed') && selectedTc) {
@@ -111,32 +138,41 @@ function QATestSuite() {
   const handleStop = useCallback(async () => {
     await engineCommand({ action: 'stop_test' }).catch(() => {})
     setSending(false)
+    setPendingAction(null)
   }, [])
 
-  const handleRerun = useCallback(async () => {
-    if (!activeProject || !selectedTc || sending || selectedStatus === 'running') return
+  const handleGenerate = useCallback(async () => {
+    if (!activeProject || !selectedTc || sending) return
     setSending(true)
+    setPendingAction('generate')
+    await engineCommand({
+      action: 'generate_test',
+      project_path: activeProject.path,
+      test_id: selectedTc.id,
+      file_path: selectedTc.file_path,
+      linked_task: selectedTc.linked_task,
+      headed,
+    }).catch(() => {
+      setSending(false)
+      setPendingAction(null)
+    })
+  }, [activeProject, selectedTc, sending, headed])
+
+  const handleRun = useCallback(async () => {
+    if (!activeProject || !selectedTc || sending) return
+    setSending(true)
+    setPendingAction('run')
     await engineCommand({
       action: 'rerun_test',
       project_path: activeProject.path,
       test_id: selectedTc.id,
       file_path: selectedTc.file_path,
       headed,
-    }).catch(() => setSending(false))
-  }, [activeProject, selectedTc, sending, selectedStatus, headed])
-
-  const handleGenerateAndRun = useCallback(async () => {
-    if (!activeProject || !selectedTc || sending || selectedStatus === 'running') return
-    setSending(true)
-    await engineCommand({
-      action: 'generate_and_run_test',
-      project_path: activeProject.path,
-      test_id: selectedTc.id,
-      file_path: selectedTc.file_path,
-      linked_task: selectedTc.linked_task,
-      headed,
-    }).catch(() => setSending(false))
-  }, [activeProject, selectedTc, sending, selectedStatus, headed])
+    }).catch(() => {
+      setSending(false)
+      setPendingAction(null)
+    })
+  }, [activeProject, selectedTc, sending, headed])
 
   const isDirty = isEditing && editContent !== testContent
 
@@ -286,7 +322,7 @@ function QATestSuite() {
                   </div>
                 ) : (
                   <>
-                    {testContent && (
+                    {testContent && !sending && (
                       <button className={styles.btnEdit} onClick={handleStartEdit}>
                         ✎ Edit
                       </button>
@@ -294,28 +330,30 @@ function QATestSuite() {
                     <button
                       className={`${styles.btnHeaded} ${headed ? styles.btnHeadedOn : ''}`}
                       onClick={() => setHeaded((h) => !h)}
+                      disabled={sending}
                       title={
                         headed
-                          ? 'Browser visible — click to run headless'
-                          : 'Run headless — click to show browser'
+                          ? 'Browser visible — click for headless'
+                          : 'Headless — click to show browser'
                       }
                     >
                       {headed ? '👁 Show Browser' : '👁 Headless'}
                     </button>
                     <button
-                      className={styles.btnRerun}
-                      onClick={handleRerun}
+                      className={`${styles.btnRerun} ${pendingAction === 'generate' ? styles.btnWorking2 : ''}`}
+                      onClick={handleGenerate}
                       disabled={sending}
-                      title="Re-run existing spec without regenerating"
+                      title="Generate Playwright spec from test case (no execution)"
                     >
-                      ↺ Re-run
+                      {pendingAction === 'generate' ? '⟳ Generating…' : '⚙ Generate'}
                     </button>
                     <button
-                      className={`${styles.btnGenerate} ${sending ? styles.btnWorking : ''}`}
-                      onClick={handleGenerateAndRun}
+                      className={`${styles.btnGenerate} ${pendingAction === 'run' ? styles.btnWorking : ''}`}
+                      onClick={handleRun}
                       disabled={sending}
+                      title="Run the existing spec (skips generation)"
                     >
-                      {sending ? '⟳ Sending…' : '▶ Generate & Run'}
+                      {pendingAction === 'run' ? '⟳ Running…' : '▶ Run'}
                     </button>
                   </>
                 )}

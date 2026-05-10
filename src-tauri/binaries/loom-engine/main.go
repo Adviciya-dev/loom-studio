@@ -736,6 +736,30 @@ func main() {
 			}
 			go generateAndRunTest(emitter, projectPath, testID, filePath, linkedTaskID, headed)
 
+		case "generate_test":
+			var projectPath, testID, filePath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("generate_test: missing project_path")
+				continue
+			}
+			if err := json.Unmarshal(cmd["test_id"], &testID); err != nil || testID == "" {
+				emitter.EmitEngineError("generate_test: missing test_id")
+				continue
+			}
+			if err := json.Unmarshal(cmd["file_path"], &filePath); err != nil || filePath == "" {
+				emitter.EmitEngineError("generate_test: missing file_path")
+				continue
+			}
+			var headed bool
+			if raw, ok := cmd["headed"]; ok {
+				json.Unmarshal(raw, &headed) //nolint:errcheck
+			}
+			var linkedTaskID string
+			if raw, ok := cmd["linked_task"]; ok {
+				json.Unmarshal(raw, &linkedTaskID) //nolint:errcheck
+			}
+			go generateTestOnly(emitter, projectPath, testID, filePath, linkedTaskID, headed)
+
 		case "rerun_test":
 			var projectPath, testID, filePath string
 			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
@@ -1082,30 +1106,13 @@ func stripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
 }
 
-func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) {
-	// One context covers the entire multi-phase pipeline (13 min total).
-	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Minute)
-
-	testCancelMu.Lock()
-	testCancelFn = cancel
-	testCancelMu.Unlock()
-
-	defer func() {
-		cancel()
-		testCancelMu.Lock()
-		testCancelFn = nil
-		testCancelMu.Unlock()
-		emitter.Emit("engine_status", "idle")
-	}()
-
-	emitter.Emit("engine_status", "running")
-	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
-
-	// ── Phase A: pre-checks (Go, instant) ──────────────────────────────────
+// runGeneration executes Phase A (pre-checks) and Phase B (Claude spec generation).
+// Returns true if the spec was generated successfully (LOOM:GENERATED found).
+func runGeneration(ctx context.Context, emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) bool {
+	// Phase A: pre-checks
 	if _, err := exec.LookPath(npxBin()); err != nil {
 		emitter.EmitEngineError("missing_dep:npx:npx not found — install Node.js and ensure it is on PATH")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 	if out, err := exec.Command(npxBin(), "playwright", "--version").Output(); err != nil {
 		emitter.EmitLogLine("⚠ Playwright not installed — Claude will install it during generation")
@@ -1113,21 +1120,19 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 		emitter.EmitLogLine("Playwright " + strings.TrimSpace(string(out)))
 	}
 
-	// ── Read files ─────────────────────────────────────────────────────────
+	// Read files
 	testCaseBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		emitter.EmitLogLine("✗ Cannot read test case: " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 	taskContent := task.GetLinkedTaskContent(projectPath, linkedTaskID)
 	if taskContent != "" {
 		emitter.EmitLogLine(fmt.Sprintf("📋 Loaded linked task: %s", linkedTaskID))
 	}
 
-	// ── Phase B: generate spec (Claude call #1, streamed, 5 min) ──────────
+	// Phase B: Claude generation (streamed, 5 min)
 	emitter.EmitLogLine("⟳ Generating Playwright test…")
-	genPrompt := buildGenerationPrompt(testID, string(testCaseBytes), taskContent, headed)
 	genCtx, genCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer genCancel()
 
@@ -1137,7 +1142,7 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 		"--print",
 		"--verbose",
 		"--output-format", "stream-json",
-		genPrompt,
+		buildGenerationPrompt(testID, string(testCaseBytes), taskContent, headed),
 	)
 	genCmd.Dir = projectPath
 	genCmd.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
@@ -1145,168 +1150,33 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 	genStdout, err := genCmd.StdoutPipe()
 	if err != nil {
 		emitter.EmitLogLine("✗ " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 	genStderr, err := genCmd.StderrPipe()
 	if err != nil {
 		emitter.EmitLogLine("✗ " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 	if err := genCmd.Start(); err != nil {
 		emitter.EmitLogLine("✗ Cannot start Claude: " + err.Error())
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 
 	var genRaw bytes.Buffer
-	genTee := io.TeeReader(genStdout, &genRaw)
-	process.NewStreamer(genTee, genStderr).Stream(emitter)
+	process.NewStreamer(io.TeeReader(genStdout, &genRaw), genStderr).Stream(emitter)
 	genCmd.Wait() //nolint:errcheck
 
 	if !strings.Contains(genRaw.String(), "LOOM:GENERATED") {
 		emitter.EmitLogLine("✗ Generation failed — LOOM:GENERATED marker not found")
-		updateTestCaseResult(filePath, "failed")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
+		return false
 	}
 	emitter.EmitLogLine("✓ Test spec generated")
-
-	// ── Phase C: run test (Go npx, streamed, 3 min) ────────────────────────
-	emitter.EmitLogLine("⟳ Running Playwright tests…")
-	runCtx, runCancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer runCancel()
-
-	runArgs := []string{
-		"playwright", "test",
-		".loom-generated/" + testID + ".spec.ts",
-		"--config", ".loom-generated/playwright.config.ts",
-		"--reporter=line",
-	}
-	if headed {
-		runArgs = append(runArgs, "--headed")
-	}
-	runCmd := exec.CommandContext(runCtx, npxBin(), runArgs...)
-	runCmd.Dir = projectPath
-	runCmd.Env = append(os.Environ(), "CI=true")
-
-	passed, runOutput := streamCmd(runCtx, emitter, runCmd)
-	cleanOutput := stripANSI(runOutput) // strip ANSI before any text analysis
-
-	if passed {
-		emitter.EmitLogLine(fmt.Sprintf("✓ %s passed", testID))
-		updateTestCaseResult(filePath, "passed")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "passed"})
-		return
-	}
-
-	// ── Phase D: diagnose failure (Go fast-path, then Claude if needed) ────
-	emitter.EmitLogLine(fmt.Sprintf("✗ %s failed", testID))
-	category := classifyFailure(cleanOutput)
-
-	switch category {
-	case "ENV":
-		emitter.EmitLogLine("⚠ Environment failure: connection refused — check that the server is running")
-		updateTestCaseResult(filePath, "failed")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
-	case "TEST":
-		emitter.EmitLogLine("⚠ Test script error (bad selector/assertion/module) — no bug report created")
-		updateTestCaseResult(filePath, "failed")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
-	}
-
-	// BUG classification — ask Claude for structured diagnosis (streamed, 90 s)
-	emitter.EmitLogLine("⟳ Analysing failure…")
-	diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
-	defer diagCancel()
-
-	diagPrompt := buildDiagnosisPrompt(testID, last100Lines(cleanOutput))
-	diagCmd := exec.CommandContext(diagCtx,
-		"claude",
-		"--dangerously-skip-permissions",
-		"--print",
-		"--verbose",
-		"--output-format", "stream-json",
-		diagPrompt,
-	)
-	diagCmd.Dir = projectPath
-
-	var diagRaw bytes.Buffer
-	diagStdout, diagErr := diagCmd.StdoutPipe()
-	if diagErr != nil {
-		emitter.EmitLogLine("⚠ Diagnosis setup failed: " + diagErr.Error())
-	} else {
-		diagStderr, _ := diagCmd.StderrPipe()
-		if startErr := diagCmd.Start(); startErr != nil {
-			emitter.EmitLogLine("⚠ Diagnosis start failed: " + startErr.Error())
-		} else {
-			diagTee := io.TeeReader(diagStdout, &diagRaw)
-			process.NewStreamer(diagTee, diagStderr).Stream(emitter)
-			if waitErr := diagCmd.Wait(); waitErr != nil {
-				emitter.EmitLogLine("⚠ Diagnosis call error: " + waitErr.Error())
-			}
-		}
-	}
-
-	diagRawStr := diagRaw.String()
-	failureDetails := extractFailureDetails(diagRawStr)
-	claudeSummary := extractClaudeProse(diagRawStr)
-
-	if failureDetails != "" {
-		emitter.EmitLogLine("── Failure details ──")
-		for _, line := range strings.Split(failureDetails, "\n") {
-			if l := strings.TrimSpace(line); l != "" {
-				emitter.EmitLogLine("  " + l)
-			}
-		}
-		emitter.EmitLogLine("─────────────────────")
-	}
-
-	// Re-check Claude's diagnosis category — don't create a bug for ENV/TEST.
-	diagCat := diagnosisCategory(failureDetails)
-	switch diagCat {
-	case "ENV":
-		emitter.EmitLogLine("⚠ Environment issue confirmed — no bug report created")
-	case "TEST":
-		emitter.EmitLogLine("⚠ Test script issue confirmed — no bug report created")
-	default:
-		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
-			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
-		}
-	}
-	updateTestCaseResult(filePath, "failed")
-	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+	return true
 }
 
-// rerunTest skips the generation phase and runs the existing .spec.ts directly.
-// Used by the "Re-run" button when the spec is already generated and correct.
-func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
-	specPath := filepath.Join(projectPath, ".loom-generated", testID+".spec.ts")
-	if _, err := os.Stat(specPath); err != nil {
-		emitter.EmitLogLine("✗ No existing spec found for " + testID + " — use Generate & Run first")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	testCancelMu.Lock()
-	testCancelFn = cancel
-	testCancelMu.Unlock()
-	defer func() {
-		cancel()
-		testCancelMu.Lock()
-		testCancelFn = nil
-		testCancelMu.Unlock()
-		emitter.Emit("engine_status", "idle")
-	}()
-
-	emitter.Emit("engine_status", "running")
-	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
-	emitter.EmitLogLine("⟳ Re-running existing spec (no regeneration)…")
-
+// runDiagnose runs the test, then diagnoses and reports any failure.
+// Used by both generateAndRunTest and rerunTest.
+func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
 	runArgs := []string{
 		"playwright", "test",
 		".loom-generated/" + testID + ".spec.ts",
@@ -1320,6 +1190,7 @@ func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, heade
 	runCmd.Dir = projectPath
 	runCmd.Env = append(os.Environ(), "CI=true")
 
+	emitter.EmitLogLine("⟳ Running Playwright tests…")
 	passed, runOutput := streamCmd(ctx, emitter, runCmd)
 	cleanOutput := stripANSI(runOutput)
 
@@ -1336,45 +1207,131 @@ func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, heade
 	switch category {
 	case "ENV":
 		emitter.EmitLogLine("⚠ Environment failure: connection refused — check that the server is running")
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
 	case "TEST":
-		emitter.EmitLogLine("⚠ Test script error — use Generate & Run to regenerate the spec")
+		emitter.EmitLogLine("⚠ Test script error (bad selector/assertion/module) — use Generate to regenerate the spec")
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+
+	// BUG — ask Claude for structured diagnosis
+	emitter.EmitLogLine("⟳ Analysing failure…")
+	diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
+	defer diagCancel()
+
+	diagCmd := exec.CommandContext(diagCtx,
+		"claude", "--dangerously-skip-permissions", "--print", "--verbose",
+		"--output-format", "stream-json",
+		buildDiagnosisPrompt(testID, last100Lines(cleanOutput)),
+	)
+	diagCmd.Dir = projectPath
+	var diagRaw bytes.Buffer
+	if diagStdout, err := diagCmd.StdoutPipe(); err == nil {
+		diagStderr, _ := diagCmd.StderrPipe()
+		if diagCmd.Start() == nil {
+			process.NewStreamer(io.TeeReader(diagStdout, &diagRaw), diagStderr).Stream(emitter)
+			diagCmd.Wait() //nolint:errcheck
+		}
+	}
+	diagRawStr := diagRaw.String()
+	failureDetails := extractFailureDetails(diagRawStr)
+	claudeSummary := extractClaudeProse(diagRawStr)
+
+	if failureDetails != "" {
+		emitter.EmitLogLine("── Failure details ──")
+		for _, line := range strings.Split(failureDetails, "\n") {
+			if l := strings.TrimSpace(line); l != "" {
+				emitter.EmitLogLine("  " + l)
+			}
+		}
+		emitter.EmitLogLine("─────────────────────")
+	}
+
+	diagCat := diagnosisCategory(failureDetails)
+	switch diagCat {
+	case "ENV":
+		emitter.EmitLogLine("⚠ Environment issue confirmed — no bug report created")
+	case "TEST":
+		emitter.EmitLogLine("⚠ Test script issue confirmed — use Generate to regenerate the spec")
 	default:
-		diagCtx, diagCancel := context.WithTimeout(ctx, 90*time.Second)
-		defer diagCancel()
-		emitter.EmitLogLine("⟳ Analysing failure…")
-		diagPrompt := buildDiagnosisPrompt(testID, last100Lines(cleanOutput))
-		diagCmd := exec.CommandContext(diagCtx, "claude",
-			"--dangerously-skip-permissions", "--print", "--verbose",
-			"--output-format", "stream-json", diagPrompt)
-		diagCmd.Dir = projectPath
-		var diagRaw bytes.Buffer
-		if diagStdout, err := diagCmd.StdoutPipe(); err == nil {
-			diagStderr, _ := diagCmd.StderrPipe()
-			if diagCmd.Start() == nil {
-				process.NewStreamer(io.TeeReader(diagStdout, &diagRaw), diagStderr).Stream(emitter)
-				diagCmd.Wait() //nolint:errcheck
-			}
-		}
-		diagRawStr := diagRaw.String()
-		failureDetails := extractFailureDetails(diagRawStr)
-		claudeSummary := extractClaudeProse(diagRawStr)
-		if failureDetails != "" {
-			emitter.EmitLogLine("── Failure details ──")
-			for _, line := range strings.Split(failureDetails, "\n") {
-				if l := strings.TrimSpace(line); l != "" {
-					emitter.EmitLogLine("  " + l)
-				}
-			}
-			emitter.EmitLogLine("─────────────────────")
-		}
-		if diagnosisCategory(failureDetails) != "ENV" && diagnosisCategory(failureDetails) != "TEST" {
-			if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
-				emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
-			}
+		if bugID := createBugReport(projectPath, testID, filePath, failureDetails, claudeSummary); bugID != "" {
+			emitter.EmitLogLine(fmt.Sprintf("🐛 Bug report created: harness/bugs/%s.md", bugID))
 		}
 	}
 	updateTestCaseResult(filePath, "failed")
 	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+}
+
+// generateTestOnly generates the spec only — no test execution.
+func generateTestOnly(emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	testCancelMu.Lock()
+	testCancelFn = cancel
+	testCancelMu.Unlock()
+	defer func() {
+		cancel()
+		testCancelMu.Lock()
+		testCancelFn = nil
+		testCancelMu.Unlock()
+		emitter.Emit("engine_status", "idle")
+	}()
+	emitter.Emit("engine_status", "running")
+
+	if runGeneration(ctx, emitter, projectPath, testID, filePath, linkedTaskID, headed) {
+		emitter.Emit("spec_generated", map[string]interface{}{"test_id": testID})
+	}
+}
+
+func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, linkedTaskID string, headed bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 13*time.Minute)
+	testCancelMu.Lock()
+	testCancelFn = cancel
+	testCancelMu.Unlock()
+	defer func() {
+		cancel()
+		testCancelMu.Lock()
+		testCancelFn = nil
+		testCancelMu.Unlock()
+		emitter.Emit("engine_status", "idle")
+	}()
+	emitter.Emit("engine_status", "running")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
+
+	if !runGeneration(ctx, emitter, projectPath, testID, filePath, linkedTaskID, headed) {
+		updateTestCaseResult(filePath, "failed")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+
+	runDiagnose(ctx, emitter, projectPath, testID, filePath, headed)
+}
+
+// rerunTest skips generation and runs the existing .spec.ts directly.
+func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
+	specPath := filepath.Join(projectPath, ".loom-generated", testID+".spec.ts")
+	if _, err := os.Stat(specPath); err != nil {
+		emitter.EmitLogLine("✗ No spec found for " + testID + " — use ⚙ Generate first")
+		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	testCancelMu.Lock()
+	testCancelFn = cancel
+	testCancelMu.Unlock()
+	defer func() {
+		cancel()
+		testCancelMu.Lock()
+		testCancelFn = nil
+		testCancelMu.Unlock()
+		emitter.Emit("engine_status", "idle")
+	}()
+	emitter.Emit("engine_status", "running")
+	emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "running"})
+	emitter.EmitLogLine("⟳ Running existing spec…")
+	runDiagnose(ctx, emitter, projectPath, testID, filePath, headed)
 }
 
 var (

@@ -115,6 +115,9 @@ export const onGitPullDiverged = (cb: (branch: string) => void) =>
 export const onTemplates = (cb: (templates: HarnessTemplate[]) => void) =>
   listen<HarnessTemplate[]>('templates', (e) => cb(e.payload))
 
+export const onSpecGenerated = (cb: (testId: string) => void) =>
+  listen<{ test_id: string }>('spec_generated', (e) => cb(e.payload.test_id))
+
 export const onTestStatus = (
   cb: (testId: string, status: TestCaseStatus, error?: string) => void
 ) =>

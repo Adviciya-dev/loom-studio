@@ -355,6 +355,12 @@
   cursor: not-allowed;
 }
 
+.btnWorking2 {
+  color: #4d9cf6;
+  border-color: rgba(77, 156, 246, 0.4);
+  background: rgba(77, 156, 246, 0.08);
+}
+
 /* ── Generate & Run button ─────────────────────────── */
 
 .btnGenerate {
