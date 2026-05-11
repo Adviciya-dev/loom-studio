@@ -21,9 +21,12 @@ function QATestSuite() {
 
   const [activeTab, setActiveTab] = useState<'tests' | 'bugs' | 'scripts'>('tests')
   const [typeFilter, setTypeFilter] = useState(ALL)
+  const [testSearch, setTestSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [bugs, setBugs] = useState<BugItem[]>([])
+  const [bugSearch, setBugSearch] = useState('')
   const [scripts, setScripts] = useState<ScriptItem[]>([])
+  const [scriptSearch, setScriptSearch] = useState('')
   const [selectedBug, setSelectedBug] = useState<BugItem | null>(null)
   const [selectedScript, setSelectedScript] = useState<ScriptItem | null>(null)
   const [panelContent, setPanelContent] = useState('')
@@ -248,7 +251,13 @@ function QATestSuite() {
   }
 
   const types = [ALL, ...Array.from(new Set(testCases.map((tc) => tc.type).filter(Boolean)))]
-  const filtered = typeFilter === ALL ? testCases : testCases.filter((tc) => tc.type === typeFilter)
+  const filtered = testCases
+    .filter((tc) => typeFilter === ALL || tc.type === typeFilter)
+    .filter((tc) => {
+      if (!testSearch.trim()) return true
+      const q = testSearch.toLowerCase()
+      return tc.id.toLowerCase().includes(q) || tc.title.toLowerCase().includes(q)
+    })
 
   if (!activeProject) {
     return (
@@ -310,6 +319,19 @@ function QATestSuite() {
                 ))}
               </div>
             )}
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search tests…"
+                value={testSearch}
+                onChange={(e) => setTestSearch(e.target.value)}
+              />
+              {testSearch && (
+                <button className={styles.searchClear} onClick={() => setTestSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
             {testCases.length === 0 ? (
               <div className={styles.leftEmpty}>
                 <p>No test cases found.</p>
@@ -342,34 +364,61 @@ function QATestSuite() {
         {/* Bugs tab */}
         {activeTab === 'bugs' && (
           <>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search bugs…"
+                value={bugSearch}
+                onChange={(e) => setBugSearch(e.target.value)}
+              />
+              {bugSearch && (
+                <button className={styles.searchClear} onClick={() => setBugSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
             {bugs.length === 0 ? (
               <div className={styles.leftEmpty}>
                 <p>No bug reports found.</p>
                 <p>Bugs are created automatically when tests fail.</p>
               </div>
             ) : (
-              <div className={styles.list}>
-                {bugs.map((bug) => (
-                  <button
-                    key={bug.id}
-                    className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
-                    onClick={async () => {
-                      setSelectedBug(bug)
-                      setSelectedScript(null)
-                      setPanelLoading(true)
-                      const content = await invoke<string>('read_file_content', {
-                        path: bug.file_path,
-                      }).catch(() => '')
-                      setPanelContent(content)
-                      setPanelLoading(false)
-                    }}
-                  >
-                    <span className={styles.bugDot} />
-                    <span className={styles.itemId}>{bug.id}</span>
-                    <span className={styles.itemTitle}>{bug.title}</span>
-                  </button>
-                ))}
-              </div>
+              (() => {
+                const filteredBugs = bugSearch.trim()
+                  ? bugs.filter((b) => {
+                      const q = bugSearch.toLowerCase()
+                      return b.id.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)
+                    })
+                  : bugs
+                return filteredBugs.length === 0 ? (
+                  <div className={styles.leftEmpty}>
+                    <p>No matching bugs.</p>
+                  </div>
+                ) : (
+                  <div className={styles.list}>
+                    {filteredBugs.map((bug) => (
+                      <button
+                        key={bug.id}
+                        className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
+                        onClick={async () => {
+                          setSelectedBug(bug)
+                          setSelectedScript(null)
+                          setPanelLoading(true)
+                          const content = await invoke<string>('read_file_content', {
+                            path: bug.file_path,
+                          }).catch(() => '')
+                          setPanelContent(content)
+                          setPanelLoading(false)
+                        }}
+                      >
+                        <span className={styles.bugDot} />
+                        <span className={styles.itemId}>{bug.id}</span>
+                        <span className={styles.itemTitle}>{bug.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()
             )}
           </>
         )}
@@ -377,6 +426,19 @@ function QATestSuite() {
         {/* Scripts tab */}
         {activeTab === 'scripts' && (
           <>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search scripts…"
+                value={scriptSearch}
+                onChange={(e) => setScriptSearch(e.target.value)}
+              />
+              {scriptSearch && (
+                <button className={styles.searchClear} onClick={() => setScriptSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
             {scripts.length === 0 ? (
               <div className={styles.leftEmpty}>
                 <p>No scripts generated yet.</p>
@@ -385,28 +447,42 @@ function QATestSuite() {
                 </p>
               </div>
             ) : (
-              <div className={styles.list}>
-                {scripts.map((s) => (
-                  <button
-                    key={s.file_path}
-                    className={`${styles.listItem} ${selectedScript?.file_path === s.file_path ? styles.listItemActive : ''}`}
-                    onClick={async () => {
-                      setSelectedScript(s)
-                      setSelectedBug(null)
-                      setPanelLoading(true)
-                      const content = await invoke<string>('read_file_content', {
-                        path: s.file_path,
-                      }).catch(() => '')
-                      setPanelContent(content)
-                      setPanelLoading(false)
-                    }}
-                  >
-                    <span className={styles.scriptDot} />
-                    <span className={styles.itemId}>{s.test_id}</span>
-                    <span className={styles.itemTitle}>{s.name}</span>
-                  </button>
-                ))}
-              </div>
+              (() => {
+                const filteredScripts = scriptSearch.trim()
+                  ? scripts.filter((s) => {
+                      const q = scriptSearch.toLowerCase()
+                      return s.test_id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+                    })
+                  : scripts
+                return filteredScripts.length === 0 ? (
+                  <div className={styles.leftEmpty}>
+                    <p>No matching scripts.</p>
+                  </div>
+                ) : (
+                  <div className={styles.list}>
+                    {filteredScripts.map((s) => (
+                      <button
+                        key={s.file_path}
+                        className={`${styles.listItem} ${selectedScript?.file_path === s.file_path ? styles.listItemActive : ''}`}
+                        onClick={async () => {
+                          setSelectedScript(s)
+                          setSelectedBug(null)
+                          setPanelLoading(true)
+                          const content = await invoke<string>('read_file_content', {
+                            path: s.file_path,
+                          }).catch(() => '')
+                          setPanelContent(content)
+                          setPanelLoading(false)
+                        }}
+                      >
+                        <span className={styles.scriptDot} />
+                        <span className={styles.itemId}>{s.test_id}</span>
+                        <span className={styles.itemTitle}>{s.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()
             )}
           </>
         )}
