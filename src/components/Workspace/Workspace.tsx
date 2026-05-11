@@ -43,6 +43,7 @@ function Workspace() {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all')
   const [bugs, setBugs] = useState<BugItem[]>([])
+  const [bugFilter, setBugFilter] = useState<'all' | 'open' | 'fixed'>('all')
   const [selectedBug, setSelectedBug] = useState<BugItem | null>(null)
   const [bugContent, setBugContent] = useState('')
   const [bugContentLoading, setBugContentLoading] = useState(false)
@@ -366,34 +367,74 @@ function Workspace() {
 
         {/* Bugs list */}
         {activeTab === 'bugs' && (
-          <div className={styles.list}>
-            {bugs.length === 0 ? (
-              <div className={styles.leftEmpty}>
-                <p>No bug reports found.</p>
-                <p>Bugs are created automatically when QA tests fail.</p>
-              </div>
-            ) : (
-              bugs.map((bug) => (
+          <>
+            <div className={styles.chips}>
+              {(
+                [
+                  { value: 'all', label: 'All' },
+                  { value: 'open', label: 'Open' },
+                  { value: 'fixed', label: 'Fixed' },
+                ] as const
+              ).map((f) => (
                 <button
-                  key={bug.id}
-                  className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
-                  onClick={async () => {
-                    setSelectedBug(bug)
-                    setBugContentLoading(true)
-                    const content = await invoke<string>('read_file_content', {
-                      path: bug.file_path,
-                    }).catch(() => '')
-                    setBugContent(content)
-                    setBugContentLoading(false)
-                  }}
+                  key={f.value}
+                  className={`${styles.chip} ${bugFilter === f.value ? styles.chipActive : ''}`}
+                  onClick={() => setBugFilter(f.value)}
                 >
-                  <span className={styles.bugDot} />
-                  <span className={styles.itemId}>{bug.id}</span>
-                  <span className={styles.itemTitle}>{bug.title}</span>
+                  {f.label}
                 </button>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+            <div className={styles.list}>
+              {bugs.length === 0 ? (
+                <div className={styles.leftEmpty}>
+                  <p>No bug reports found.</p>
+                  <p>Bugs are created automatically when QA tests fail.</p>
+                </div>
+              ) : (
+                (() => {
+                  const filtered = bugs.filter((b) => {
+                    if (bugFilter === 'all') return true
+                    const s = b.status.toLowerCase()
+                    if (bugFilter === 'fixed') return s.includes('fixed') || s.includes('✅')
+                    return !s.includes('fixed') && !s.includes('✅')
+                  })
+                  return filtered.length === 0 ? (
+                    <div className={styles.leftEmpty}>
+                      <p>No {bugFilter} bugs.</p>
+                    </div>
+                  ) : (
+                    filtered.map((bug) => (
+                      <button
+                        key={bug.id}
+                        className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
+                        onClick={async () => {
+                          setSelectedBug(bug)
+                          setBugContentLoading(true)
+                          const content = await invoke<string>('read_file_content', {
+                            path: bug.file_path,
+                          }).catch(() => '')
+                          setBugContent(content)
+                          setBugContentLoading(false)
+                        }}
+                      >
+                        <span
+                          className={styles.bugDot}
+                          style={
+                            bug.status.includes('fixed') || bug.status.includes('✅')
+                              ? { background: '#4ade80' }
+                              : undefined
+                          }
+                        />
+                        <span className={styles.itemId}>{bug.id}</span>
+                        <span className={styles.itemTitle}>{bug.title}</span>
+                      </button>
+                    ))
+                  )
+                })()
+              )}
+            </div>
+          </>
         )}
       </div>
 
