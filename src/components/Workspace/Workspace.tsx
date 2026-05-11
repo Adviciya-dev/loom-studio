@@ -42,8 +42,10 @@ function Workspace() {
   const [allTasks, setAllTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all')
+  const [taskSearch, setTaskSearch] = useState('')
   const [bugs, setBugs] = useState<BugItem[]>([])
   const [bugFilter, setBugFilter] = useState<'all' | 'open' | 'fixed'>('all')
+  const [bugSearch, setBugSearch] = useState('')
   const [selectedBug, setSelectedBug] = useState<BugItem | null>(null)
   const [bugContent, setBugContent] = useState('')
   const [bugContentLoading, setBugContentLoading] = useState(false)
@@ -142,8 +144,13 @@ function Workspace() {
       return live?.commitHash ? { ...t, commitHash: live.commitHash } : t
     })
 
-  const filtered =
-    filter === 'all' ? tasks : tasks.filter((t) => (t.status ?? 'pending') === filter)
+  const filtered = tasks
+    .filter((t) => filter === 'all' || (t.status ?? 'pending') === filter)
+    .filter((t) => {
+      if (!taskSearch.trim()) return true
+      const q = taskSearch.toLowerCase()
+      return t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q)
+    })
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null
 
@@ -326,6 +333,19 @@ function Workspace() {
                 </button>
               ))}
             </div>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search tasks…"
+                value={taskSearch}
+                onChange={(e) => setTaskSearch(e.target.value)}
+              />
+              {taskSearch && (
+                <button className={styles.searchClear} onClick={() => setTaskSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
             <div className={styles.list} ref={listRef}>
               {loading ? (
                 <SkeletonRows />
@@ -385,6 +405,19 @@ function Workspace() {
                 </button>
               ))}
             </div>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search bugs…"
+                value={bugSearch}
+                onChange={(e) => setBugSearch(e.target.value)}
+              />
+              {bugSearch && (
+                <button className={styles.searchClear} onClick={() => setBugSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
             <div className={styles.list}>
               {bugs.length === 0 ? (
                 <div className={styles.leftEmpty}>
@@ -393,15 +426,21 @@ function Workspace() {
                 </div>
               ) : (
                 (() => {
-                  const filtered = bugs.filter((b) => {
-                    if (bugFilter === 'all') return true
-                    const s = b.status.toLowerCase()
-                    if (bugFilter === 'fixed') return s.includes('fixed') || s.includes('✅')
-                    return !s.includes('fixed') && !s.includes('✅')
-                  })
+                  const filtered = bugs
+                    .filter((b) => {
+                      if (bugFilter === 'all') return true
+                      const s = b.status.toLowerCase()
+                      if (bugFilter === 'fixed') return s.includes('fixed') || s.includes('✅')
+                      return !s.includes('fixed') && !s.includes('✅')
+                    })
+                    .filter((b) => {
+                      if (!bugSearch.trim()) return true
+                      const q = bugSearch.toLowerCase()
+                      return b.id.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)
+                    })
                   return filtered.length === 0 ? (
                     <div className={styles.leftEmpty}>
-                      <p>No {bugFilter} bugs.</p>
+                      <p>No {bugSearch ? 'matching' : bugFilter} bugs.</p>
                     </div>
                   ) : (
                     filtered.map((bug) => (
