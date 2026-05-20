@@ -9,6 +9,11 @@ import type {
   HarnessTemplate,
   TestCaseStatus,
   TestRunResult,
+  CqcClient,
+  CqcCheckResult,
+  CqcLogEntry,
+  CqcProgressStep,
+  AuditDimensionStatus,
 } from '@/types'
 
 // ─── Payload types ────────────────────────────────────────────────────────────
@@ -115,6 +120,9 @@ export const onGitPullDiverged = (cb: (branch: string) => void) =>
 export const onTemplates = (cb: (templates: HarnessTemplate[]) => void) =>
   listen<HarnessTemplate[]>('templates', (e) => cb(e.payload))
 
+export const onSpecGenerated = (cb: (testId: string) => void) =>
+  listen<{ test_id: string }>('spec_generated', (e) => cb(e.payload.test_id))
+
 export const onTestStatus = (
   cb: (testId: string, status: TestCaseStatus, error?: string) => void
 ) =>
@@ -143,3 +151,45 @@ export const onTestRunComplete = (cb: (result: TestRunResult) => void) =>
       failedTests: e.payload.failed_tests,
     })
   )
+
+// ─── CQC events ───────────────────────────────────────────────────────────────
+
+export const onCqcClients = (cb: (clients: CqcClient[]) => void) =>
+  listen<CqcClient[]>('cqc_clients', (e) => cb(e.payload))
+
+export const onCqcCheckResult = (cb: (result: CqcCheckResult) => void) =>
+  listen<CqcCheckResult>('cqc_check_result', (e) => cb(e.payload))
+
+export const onCqcLog = (cb: (entries: CqcLogEntry[]) => void) =>
+  listen<CqcLogEntry[]>('cqc_log', (e) => cb(e.payload))
+
+export const onCqcProgress = (cb: (step: CqcProgressStep) => void) =>
+  listen<{ step: CqcProgressStep }>('cqc:progress', (e) => cb(e.payload.step))
+
+export const onCqcCheckError = (cb: (error: string) => void) =>
+  listen<{ error: string }>('cqc_check_error', (e) => cb(e.payload.error))
+
+// ─── Site Audit Phase 2 events ────────────────────────────────────────────────
+
+export const onAuditDimensionStatus = (cb: (status: AuditDimensionStatus) => void) =>
+  listen<AuditDimensionStatus>('audit_dimension_status', (e) => cb(e.payload))
+
+export const onAuditLogLine = (cb: (line: LogLine) => void) =>
+  listen<LogLine>('audit_log_line', (e) => cb(e.payload))
+
+export const onAuditCompleted = (cb: (payload: { sessionId: string }) => void) =>
+  listen<{ sessionId: string }>('audit_completed', (e) => cb(e.payload))
+
+export const onAuditCancelled = (cb: (payload: { sessionId: string }) => void) =>
+  listen<{ sessionId: string }>('audit_cancelled', (e) => cb(e.payload))
+
+export const onAuditError = (
+  cb: (payload: { sessionId: string; dimension: string; message: string }) => void
+) =>
+  listen<{ sessionId: string; dimension: string; message: string }>('audit_error', (e) =>
+    cb(e.payload)
+  )
+
+export const onAuditReportReady = (
+  cb: (payload: { sessionId: string; reportPath: string }) => void
+) => listen<{ sessionId: string; reportPath: string }>('audit_report_ready', (e) => cb(e.payload))

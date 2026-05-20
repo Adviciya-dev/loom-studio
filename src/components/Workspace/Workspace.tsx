@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import { onTasks } from '@/lib/events'
-import type { Task, TaskStatus } from '@/types'
+import type { Task, TaskStatus, BugItem } from '@/types'
 import styles from './Workspace.module.css'
 
 const STATUS_FILTERS: Array<{ value: TaskStatus | 'all'; label: string }> = [
@@ -38,9 +38,17 @@ function Workspace() {
   const { state, dispatch } = useApp()
   const { activeProject, activeTasks, activeTaskIndex, engineStatus } = state
 
+  const [activeTab, setActiveTab] = useState<'tasks' | 'bugs'>('tasks')
   const [allTasks, setAllTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<TaskStatus | 'all'>('all')
+  const [taskSearch, setTaskSearch] = useState('')
+  const [bugs, setBugs] = useState<BugItem[]>([])
+  const [bugFilter, setBugFilter] = useState<'all' | 'open' | 'fixed'>('all')
+  const [bugSearch, setBugSearch] = useState('')
+  const [selectedBug, setSelectedBug] = useState<BugItem | null>(null)
+  const [bugContent, setBugContent] = useState('')
+  const [bugContentLoading, setBugContentLoading] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [taskContent, setTaskContent] = useState('')
@@ -76,6 +84,14 @@ function Workspace() {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }
+
+  // Load bugs when Bugs tab is opened
+  useEffect(() => {
+    if (!activeProject || activeTab !== 'bugs') return
+    invoke<BugItem[]>('read_bugs', { path: activeProject.path })
+      .then(setBugs)
+      .catch(() => setBugs([]))
+  }, [activeProject?.id, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load all tasks whenever the active project changes
   useEffect(() => {
@@ -128,8 +144,13 @@ function Workspace() {
       return live?.commitHash ? { ...t, commitHash: live.commitHash } : t
     })
 
-  const filtered =
-    filter === 'all' ? tasks : tasks.filter((t) => (t.status ?? 'pending') === filter)
+  const filtered = tasks
+    .filter((t) => filter === 'all' || (t.status ?? 'pending') === filter)
+    .filter((t) => {
+      if (!taskSearch.trim()) return true
+      const q = taskSearch.toLowerCase()
+      return t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q)
+    })
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null
 
@@ -200,6 +221,35 @@ function Workspace() {
     }).catch(() => dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' }))
   }
 
+  async function handleFixBug() {
+    if (!isIdle || !selectedBug || !activeProject || !bugContent) return
+    const fixPrompt =
+      'You are fixing a bug in this project. Read the full bug report below and implement the fix.\n\n' +
+      '## Bug Report\n\n' +
+      bugContent +
+      '\n\n---\n\n' +
+      'Instructions:\n' +
+      '1. Read the files referenced in the bug report (test case, source files).\n' +
+      '2. Understand the root cause stated in the report.\n' +
+      '3. Implement the fix so the Actual Result matches the Expected Result.\n' +
+      '4. Do NOT modify test case files or bug report files.\n' +
+      '5. When done, update the bug file at `' +
+      selectedBug.file_path +
+      '`:\n' +
+      '   - Set **Status** to `✅ Fixed`\n' +
+      '   - Set **Fixed Date** to today (YYYY-MM-DD)\n' +
+      '   Make this the very last thing you do.'
+    dispatch({ type: 'LOG_CLEAR' })
+    dispatch({ type: 'SET_ENGINE_STATUS', status: 'running' })
+    await engineCommand({
+      action: 'start',
+      task_id: selectedBug.id,
+      task_title: selectedBug.title,
+      prompt: fixPrompt,
+      project_path: activeProject.path,
+    }).catch(() => dispatch({ type: 'SET_ENGINE_STATUS', status: 'idle' }))
+  }
+
   const isDirty = isEditing && editContent !== taskContent
 
   function handleStartEdit() {
@@ -243,81 +293,266 @@ function Workspace() {
 
   return (
     <div className={styles.split} ref={containerRef}>
-      {/* ── Left panel — task list ──────────────────────── */}
+      {/* ── Left panel — task/bug list ─────────────────── */}
       <div className={styles.left} style={{ width: `${splitPct}%` }}>
-        <div className={styles.leftHeader}>
-          <span className={styles.leftTitle}>
+        {/* Tab bar */}
+        <div className={styles.tabBar}>
+          <button
+            className={`${styles.tabBtn} ${activeTab === 'tasks' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('tasks')}
+          >
             Tasks
             {!loading && tasks.length > 0 && (
-              <span className={styles.count}>{filtered.length}</span>
+              <span className={styles.tabCount}>{filtered.length}</span>
             )}
-          </span>
-          {loading && <span className={styles.loadingDot} />}
+            {loading && <span className={styles.loadingDot} />}
+          </button>
+          <button
+            className={`${styles.tabBtn} ${activeTab === 'bugs' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('bugs')}
+          >
+            Bugs
+            {bugs.length > 0 && <span className={styles.tabCount}>{bugs.length}</span>}
+          </button>
         </div>
 
-        <div className={styles.chips}>
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              className={`${styles.chip} ${filter === f.value ? styles.chipActive : ''}`}
-              onClick={() => {
-                setFilter(f.value)
-                if (listRef.current) listRef.current.scrollTop = 0
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className={styles.list} ref={listRef}>
-          {loading ? (
-            <SkeletonRows />
-          ) : tasks.length === 0 ? (
-            <div className={styles.leftEmpty}>
-              <p>No tasks found.</p>
-              <p>
-                Add <code>.md</code> files to <code>harness/tasks/</code>
-              </p>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className={styles.leftEmpty}>
-              <p>No {filter !== 'all' ? filter : ''} tasks.</p>
-            </div>
-          ) : (
-            filtered.map((task) => {
-              const st = task.status ?? 'pending'
-              const isSelected = selectedId === task.id
-              return (
+        {/* Tasks list */}
+        {activeTab === 'tasks' && (
+          <>
+            <div className={styles.chips}>
+              {STATUS_FILTERS.map((f) => (
                 <button
-                  key={task.id}
-                  ref={isSelected ? selectedItemRef : null}
-                  className={`${styles.listItem} ${isSelected ? styles.listItemActive : ''}`}
-                  onClick={() => handleSelectTask(task)}
+                  key={f.value}
+                  className={`${styles.chip} ${filter === f.value ? styles.chipActive : ''}`}
+                  onClick={() => {
+                    setFilter(f.value)
+                    if (listRef.current) listRef.current.scrollTop = 0
+                  }}
                 >
-                  <span className={dotClass(task.status)} />
-                  <span className={styles.itemId}>{task.id}</span>
-                  <span className={styles.itemTitle}>{task.title}</span>
-                  <span className={`${styles.statusPill} ${styles[`pill_${st}`]}`}>
-                    {st === 'in-progress' ? 'Active' : st === 'completed' ? 'Done' : 'Pending'}
-                  </span>
+                  {f.label}
                 </button>
-              )
-            })
-          )}
-        </div>
+              ))}
+            </div>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search tasks…"
+                value={taskSearch}
+                onChange={(e) => setTaskSearch(e.target.value)}
+              />
+              {taskSearch && (
+                <button className={styles.searchClear} onClick={() => setTaskSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
+            <div className={styles.list} ref={listRef}>
+              {loading ? (
+                <SkeletonRows />
+              ) : tasks.length === 0 ? (
+                <div className={styles.leftEmpty}>
+                  <p>No tasks found.</p>
+                  <p>
+                    Add <code>.md</code> files to <code>harness/tasks/</code>
+                  </p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className={styles.leftEmpty}>
+                  <p>No {filter !== 'all' ? filter : ''} tasks.</p>
+                </div>
+              ) : (
+                filtered.map((task) => {
+                  const st = task.status ?? 'pending'
+                  const isSelected = selectedId === task.id
+                  return (
+                    <button
+                      key={task.id}
+                      ref={isSelected ? selectedItemRef : null}
+                      className={`${styles.listItem} ${isSelected ? styles.listItemActive : ''}`}
+                      onClick={() => handleSelectTask(task)}
+                    >
+                      <span className={dotClass(task.status)} />
+                      <span className={styles.itemId}>{task.id}</span>
+                      <span className={styles.itemTitle}>{task.title}</span>
+                      <span className={`${styles.statusPill} ${styles[`pill_${st}`]}`}>
+                        {st === 'in-progress' ? 'Active' : st === 'completed' ? 'Done' : 'Pending'}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Bugs list */}
+        {activeTab === 'bugs' && (
+          <>
+            <div className={styles.chips}>
+              {(
+                [
+                  { value: 'all', label: 'All' },
+                  { value: 'open', label: 'Open' },
+                  { value: 'fixed', label: 'Fixed' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.value}
+                  className={`${styles.chip} ${bugFilter === f.value ? styles.chipActive : ''}`}
+                  onClick={() => setBugFilter(f.value)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.searchBar}>
+              <input
+                className={styles.searchInput}
+                placeholder="Search bugs…"
+                value={bugSearch}
+                onChange={(e) => setBugSearch(e.target.value)}
+              />
+              {bugSearch && (
+                <button className={styles.searchClear} onClick={() => setBugSearch('')}>
+                  ×
+                </button>
+              )}
+            </div>
+            <div className={styles.list}>
+              {bugs.length === 0 ? (
+                <div className={styles.leftEmpty}>
+                  <p>No bug reports found.</p>
+                  <p>Bugs are created automatically when QA tests fail.</p>
+                </div>
+              ) : (
+                (() => {
+                  const filtered = bugs
+                    .filter((b) => {
+                      if (bugFilter === 'all') return true
+                      const s = b.status.toLowerCase()
+                      if (bugFilter === 'fixed') return s.includes('fixed') || s.includes('✅')
+                      return !s.includes('fixed') && !s.includes('✅')
+                    })
+                    .filter((b) => {
+                      if (!bugSearch.trim()) return true
+                      const q = bugSearch.toLowerCase()
+                      return b.id.toLowerCase().includes(q) || b.title.toLowerCase().includes(q)
+                    })
+                  return filtered.length === 0 ? (
+                    <div className={styles.leftEmpty}>
+                      <p>No {bugSearch ? 'matching' : bugFilter} bugs.</p>
+                    </div>
+                  ) : (
+                    filtered.map((bug) => (
+                      <button
+                        key={bug.id}
+                        className={`${styles.listItem} ${selectedBug?.id === bug.id ? styles.listItemActive : ''}`}
+                        onClick={async () => {
+                          setSelectedBug(bug)
+                          setBugContentLoading(true)
+                          const content = await invoke<string>('read_file_content', {
+                            path: bug.file_path,
+                          }).catch(() => '')
+                          setBugContent(content)
+                          setBugContentLoading(false)
+                        }}
+                      >
+                        <span
+                          className={styles.bugDot}
+                          style={
+                            bug.status.includes('fixed') || bug.status.includes('✅')
+                              ? { background: '#4ade80' }
+                              : undefined
+                          }
+                        />
+                        <span className={styles.itemId}>{bug.id}</span>
+                        <span className={styles.itemTitle}>{bug.title}</span>
+                      </button>
+                    ))
+                  )
+                })()
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className={styles.divider} onMouseDown={onDividerMouseDown} />
 
-      {/* ── Right panel — task detail ───────────────────── */}
+      {/* ── Right panel ─────────────────────────────────── */}
       <div className={styles.right}>
-        {!selectedTask ? (
+        {/* Bug detail panel */}
+        {activeTab === 'bugs' && !selectedBug && (
+          <div className={styles.noSelection}>
+            <span className={styles.noSelectionIcon}>←</span>
+            <span>Select a bug</span>
+          </div>
+        )}
+        {activeTab === 'bugs' && selectedBug && (
+          <>
+            <div className={styles.rightHeader}>
+              <div className={styles.rightHeaderInfo}>
+                <span className={styles.detailId}>{selectedBug.id}</span>
+                <span className={styles.detailTitle}>{selectedBug.title}</span>
+              </div>
+              <div className={styles.headerActions}>
+                {isRunning ? (
+                  <span className={styles.runningBadge}>● Fixing…</span>
+                ) : isPaused ? (
+                  <span className={styles.pausedBadge}>⏸ Paused</span>
+                ) : (
+                  <button
+                    className={styles.fixBtn}
+                    onClick={handleFixBug}
+                    disabled={!isIdle || !bugContent}
+                  >
+                    🔧 Fix Bug
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className={styles.metaRow}>
+              {selectedBug.severity && (
+                <span className={`${styles.badge} ${styles.badgeDefault}`}>
+                  {selectedBug.severity}
+                </span>
+              )}
+              {selectedBug.test_case && (
+                <span className={styles.metaItem}>
+                  Test: <strong>{selectedBug.test_case}</strong>
+                </span>
+              )}
+              {selectedBug.found_date && (
+                <span className={styles.metaItem}>Found {selectedBug.found_date}</span>
+              )}
+            </div>
+            <div className={styles.rightBody}>
+              <div className={styles.sectionLabel}>Bug Report</div>
+              {bugContentLoading ? (
+                <div className={styles.contentSkeleton}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={styles.contentSkeletonLine}
+                      style={{ width: `${70 + (i % 3) * 10}%` }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <pre className={styles.contentBlock}>{bugContent}</pre>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Task detail panel */}
+        {activeTab === 'tasks' && !selectedTask && (
           <div className={styles.noSelection}>
             <span className={styles.noSelectionIcon}>←</span>
             <span>Select a task</span>
           </div>
-        ) : (
+        )}
+        {activeTab === 'tasks' && selectedTask && (
           <>
             <div className={styles.rightHeader}>
               <div className={styles.rightHeaderInfo}>

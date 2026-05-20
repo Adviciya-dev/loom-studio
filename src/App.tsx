@@ -18,6 +18,11 @@ import {
   onTestStatus,
   onTestRunStarted,
   onTestRunComplete,
+  onCqcClients,
+  onCqcCheckResult,
+  onCqcLog,
+  onCqcProgress,
+  onCqcCheckError,
 } from '@/lib/events'
 import Sidebar from '@/components/Sidebar/Sidebar'
 import TopBar from '@/components/TopBar/TopBar'
@@ -27,6 +32,8 @@ import BottomBar from '@/components/BottomBar/BottomBar'
 import HarnessManager from '@/components/HarnessManager/HarnessManager'
 import GitHubPR from '@/components/GitHubPR/GitHubPR'
 import QATestSuite from '@/components/QATestSuite/QATestSuite'
+import ContentQualityChecker from '@/components/ContentQualityChecker/ContentQualityChecker'
+import { SiteAudit } from '@/components/SiteAudit/SiteAudit'
 import TaskSelectModal from '@/components/TaskSelectModal/TaskSelectModal'
 import DiffOverlay from '@/components/DiffOverlay/DiffOverlay'
 import Toast from '@/components/Toast/Toast'
@@ -162,6 +169,36 @@ function AppInner() {
 
       onTestRunComplete(guard((result) => dispatch({ type: 'SET_TEST_RUN_RESULT', result }))),
 
+      onCqcClients(guard((clients) => dispatch({ type: 'SET_CQC_CLIENTS', clients }))),
+
+      onCqcCheckResult(
+        guard((result) => {
+          dispatch({ type: 'SET_CQC_ACTIVE_CHECK', result })
+          dispatch({ type: 'SET_CQC_CHECK_RUNNING', running: false })
+          dispatch({ type: 'SET_CQC_PROGRESS_STEP', step: null })
+          dispatch({ type: 'SET_CQC_SUB_VIEW', view: 'check-result' })
+        })
+      ),
+
+      onCqcLog(guard((entries) => dispatch({ type: 'SET_CQC_LOG', entries }))),
+
+      onCqcProgress(guard((step) => dispatch({ type: 'SET_CQC_PROGRESS_STEP', step }))),
+
+      onCqcCheckError(
+        guard((error) => {
+          dispatch({ type: 'SET_CQC_CHECK_RUNNING', running: false })
+          dispatch({ type: 'SET_CQC_PROGRESS_STEP', step: null })
+          dispatch({
+            type: 'LOG_APPEND',
+            line: {
+              timestamp: new Date().toLocaleTimeString('en', { hour12: false }),
+              level: 'ERROR',
+              content: 'CQC: ' + error,
+            },
+          })
+        })
+      ),
+
       ...(import.meta.env.DEV
         ? [onEngineReady(guardVoid(() => console.log('[loom] engine ready')))] // eslint-disable-line no-console
         : []),
@@ -175,6 +212,17 @@ function AppInner() {
     )
 
     engineCommand({ action: 'get_projects' }).catch(() => {})
+
+    invoke<string>('get_global_cqc_path')
+      .then((path) => {
+        if (genRef.current !== myGen) return
+        dispatch({ type: 'SET_GLOBAL_CQC_PATH', path })
+        if (!activeProjectRef.current) {
+          invoke('cqc_list_clients', { projectPath: path }).catch(() => {})
+          invoke('cqc_list_log', { projectPath: path, limit: 100 }).catch(() => {})
+        }
+      })
+      .catch(() => {})
 
     return () => {
       genRef.current = myGen + 1 // invalidate myGen — all callbacks from this run become stale
@@ -205,6 +253,10 @@ function AppInner() {
             <GitHubPR />
           ) : state.appMode === 'qa' ? (
             <QATestSuite />
+          ) : state.appMode === 'cqc' ? (
+            <ContentQualityChecker />
+          ) : state.appMode === 'audit' ? (
+            <SiteAudit />
           ) : (
             <Workspace />
           )}

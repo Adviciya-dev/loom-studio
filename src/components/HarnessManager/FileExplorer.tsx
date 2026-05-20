@@ -23,6 +23,7 @@ function fileIcon(node: FileNode): string {
   if (ext === 'rs') return '🦀'
   if (ext === 'json' || ext === 'jsonc') return '{}'
   if (ext === 'css') return '🎨'
+  if (ext === 'svg') return '🖼️'
   if (ext === 'toml' || ext === 'yaml' || ext === 'yml') return '⚙'
   if (ext === 'sh' || ext === 'bash') return '$'
   return '·'
