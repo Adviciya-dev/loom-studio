@@ -1,30 +1,40 @@
 package ipc
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
 // Emitter serializes structured events as JSON and writes them to stdout.
+// All methods are safe to call from multiple goroutines concurrently.
 type Emitter struct {
-	out io.Writer
+	mu  sync.Mutex
+	out *bufio.Writer
 }
 
 func NewEmitter(out io.Writer) *Emitter {
-	return &Emitter{out: out}
+	return &Emitter{out: bufio.NewWriter(out)}
 }
 
 func (e *Emitter) Emit(eventType string, payload interface{}) {
 	ev := Event{Event: eventType, Payload: payload}
 	b, err := json.Marshal(ev)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if err != nil {
 		fmt.Fprintf(e.out, `{"event":"engine_error","payload":{"message":"failed to marshal event"}}`)
 		fmt.Fprintln(e.out)
+		e.out.Flush() //nolint:errcheck
 		return
 	}
 	fmt.Fprintln(e.out, string(b))
+	e.out.Flush() //nolint:errcheck
 }
 
 func (e *Emitter) EmitReady() {

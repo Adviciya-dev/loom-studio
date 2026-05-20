@@ -8,7 +8,10 @@ import styles from './TopBar.module.css'
 function TopBar() {
   const { state } = useApp()
   const isHarness =
-    state.appMode === 'harness' || state.appMode === 'qa' || state.appMode === 'github'
+    state.appMode === 'harness' ||
+    state.appMode === 'qa' ||
+    state.appMode === 'github' ||
+    state.appMode === 'cqc'
 
   return (
     <header className={styles.topBar}>

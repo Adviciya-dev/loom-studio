@@ -1,4 +1,12 @@
-import { Play, FolderOpen, GitBranch, FlaskConical, Settings } from 'lucide-react'
+import {
+  Play,
+  FolderOpen,
+  GitBranch,
+  FlaskConical,
+  Settings,
+  ShieldCheck,
+  Globe,
+} from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import styles from './Sidebar.module.css'
 
@@ -37,6 +45,20 @@ function Sidebar() {
           onClick={() => dispatch({ type: 'SET_APP_MODE', mode: 'github' })}
         >
           <GitBranch size={18} strokeWidth={1.75} />
+        </button>
+        <button
+          className={`${styles.navItem} ${appMode === 'cqc' ? styles.active : ''}`}
+          title="Content Quality Checker"
+          onClick={() => dispatch({ type: 'SET_APP_MODE', mode: 'cqc' })}
+        >
+          <ShieldCheck size={18} strokeWidth={1.75} />
+        </button>
+        <button
+          className={`${styles.navItem} ${appMode === 'audit' ? styles.active : ''}`}
+          title="Site Audit"
+          onClick={() => dispatch({ type: 'SET_APP_MODE', mode: 'audit' })}
+        >
+          <Globe size={18} strokeWidth={1.75} />
         </button>
       </nav>
       <div className={styles.bottom}>

@@ -8,6 +8,16 @@ import type {
   TestCase,
   TestCaseStatus,
   TestRunResult,
+  CqcClient,
+  CqcCheckResult,
+  CqcLogEntry,
+  CqcProgressStep,
+  CqcSubView,
+  AuditSession,
+  AuditPhase,
+  AuditIntake,
+  AuditDimensionStatus,
+  GoalTask,
 } from '@/types'
 
 export interface AppState {
@@ -29,7 +39,7 @@ export interface AppState {
   gitAhead: number
   gitBehind: number
   gitSshError: boolean
-  appMode: 'run' | 'harness' | 'qa' | 'github'
+  appMode: 'run' | 'harness' | 'qa' | 'github' | 'cqc' | 'audit'
   ghAvailable: boolean | null
   ghDefaultBranch: string
   gitCommitsOnBranch: string[]
@@ -40,6 +50,25 @@ export interface AppState {
   testStatuses: Record<string, TestCaseStatus>
   testRunResult: TestRunResult | null
   isRunningTests: boolean
+  // Site Audit
+  auditSessions: AuditSession[]
+  activeAuditSession: AuditSession | null
+  auditPhase: AuditPhase
+  auditDimensions: AuditDimensionStatus[]
+  auditLog: LogLine[]
+  auditReport: string | null
+  auditReportGenerating: boolean
+  auditReportError: string | null
+  // CQC
+  globalCqcPath: string
+  cqcClients: CqcClient[]
+  cqcSelectedClientId: string | null
+  cqcActiveCheck: CqcCheckResult | null
+  cqcCheckRunning: boolean
+  cqcProgressStep: CqcProgressStep | null
+  cqcLog: CqcLogEntry[]
+  cqcUser: string
+  cqcSubView: CqcSubView
 }
 
 export interface GhPrItem {
@@ -80,6 +109,23 @@ export const initialState: AppState = {
   testStatuses: {},
   testRunResult: null,
   isRunningTests: false,
+  auditSessions: [],
+  activeAuditSession: null,
+  auditPhase: 'intake',
+  auditDimensions: [],
+  auditLog: [],
+  auditReport: null,
+  auditReportGenerating: false,
+  auditReportError: null,
+  globalCqcPath: '',
+  cqcClients: [],
+  cqcSelectedClientId: null,
+  cqcActiveCheck: null,
+  cqcCheckRunning: false,
+  cqcProgressStep: null,
+  cqcLog: [],
+  cqcUser: '',
+  cqcSubView: 'check',
 }
 
 export type AppAction =
@@ -107,7 +153,7 @@ export type AppAction =
   | { type: 'SET_GIT_INFO'; branch: string; branches: string[] }
   | { type: 'SET_GIT_REMOTE_INFO'; url: string; ahead: number; behind: number }
   | { type: 'SET_GIT_SSH_ERROR'; value: boolean }
-  | { type: 'SET_APP_MODE'; mode: 'run' | 'harness' | 'qa' | 'github' }
+  | { type: 'SET_APP_MODE'; mode: 'run' | 'harness' | 'qa' | 'github' | 'cqc' | 'audit' }
   | { type: 'SET_GH_AVAILABLE'; available: boolean }
   | { type: 'SET_GH_DEFAULT_BRANCH'; branch: string }
   | { type: 'SET_GIT_COMMITS_ON_BRANCH'; commits: string[] }
@@ -119,3 +165,36 @@ export type AppAction =
   | { type: 'SET_TEST_RUN_RESULT'; result: TestRunResult }
   | { type: 'SET_IS_RUNNING_TESTS'; value: boolean }
   | { type: 'CLEAR_TEST_RESULTS' }
+  // Site Audit — Phase 3 report
+  | { type: 'AUDIT_REPORT_STARTED' }
+  | { type: 'AUDIT_REPORT_FAILED'; payload: string }
+  | { type: 'AUDIT_PHASE_SET'; payload: AuditPhase }
+  // Site Audit — intake
+  | { type: 'AUDIT_SESSION_CREATED'; payload: AuditSession }
+  | { type: 'AUDIT_INTAKE_SAVED'; payload: AuditIntake }
+  // Site Audit — execution
+  | { type: 'AUDIT_STARTED' }
+  | { type: 'AUDIT_DIMENSION_STATUS'; payload: AuditDimensionStatus }
+  | { type: 'AUDIT_LOG_LINE'; payload: LogLine }
+  | { type: 'AUDIT_COMPLETED' }
+  | { type: 'AUDIT_CANCELLED' }
+  // Site Audit — report
+  | { type: 'AUDIT_REPORT_READY'; payload: { reportPath: string; markdown: string } }
+  // Site Audit — goals
+  | { type: 'AUDIT_GOALS_READY'; payload: GoalTask[] }
+  | { type: 'AUDIT_GOAL_TASK_UPDATED'; payload: GoalTask }
+  | { type: 'AUDIT_GOAL_TASK_REMOVED'; payload: string }
+  | { type: 'AUDIT_TASKS_SAVED'; payload: { count: number } }
+  // Site Audit — session management
+  | { type: 'AUDIT_SESSIONS_LOADED'; payload: AuditSession[] }
+  | { type: 'AUDIT_ACTIVE_SESSION_SET'; payload: AuditSession }
+  // CQC
+  | { type: 'SET_GLOBAL_CQC_PATH'; path: string }
+  | { type: 'SET_CQC_CLIENTS'; clients: CqcClient[] }
+  | { type: 'SET_CQC_SELECTED_CLIENT_ID'; id: string | null }
+  | { type: 'SET_CQC_ACTIVE_CHECK'; result: CqcCheckResult | null }
+  | { type: 'SET_CQC_CHECK_RUNNING'; running: boolean }
+  | { type: 'SET_CQC_PROGRESS_STEP'; step: CqcProgressStep | null }
+  | { type: 'SET_CQC_LOG'; entries: CqcLogEntry[] }
+  | { type: 'SET_CQC_USER'; user: string }
+  | { type: 'SET_CQC_SUB_VIEW'; view: CqcSubView }

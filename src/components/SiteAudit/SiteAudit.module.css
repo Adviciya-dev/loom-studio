@@ -1,0 +1,48 @@
+.shell {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.leftPanel {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.newAuditBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px;
+  padding: 7px 14px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
+}
+
+.newAuditBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 0 10px rgba(124, 108, 252, 0.35);
+}
+
+.newAuditBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rightPanel {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}

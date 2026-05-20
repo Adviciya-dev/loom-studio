@@ -35,6 +35,7 @@ function FileModal({ path, onClose, onAttach }: Props) {
   const fileName = path.split('/').pop() ?? path
   const ext = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : ''
   const isMarkdown = ext === 'md' || ext === 'mdx'
+  const isSvg = ext === 'svg'
 
   useEffect(() => {
     invoke<string>('read_file_content', { path })
@@ -97,7 +98,7 @@ function FileModal({ path, onClose, onAttach }: Props) {
       <div className={styles.modal} onClick={(e) => e.stopPropagation()} role="dialog">
         <div className={styles.header}>
           <span className={styles.filePath}>{path}</span>
-          {!editing && content && (
+          {!editing && content && !isSvg && (
             <span className={styles.lineCount}>{lines.length.toLocaleString()} lines</span>
           )}
           {!editing && content && (
@@ -150,6 +151,8 @@ function FileModal({ path, onClose, onAttach }: Props) {
             <div className={styles.error}>{error}</div>
           ) : content === null ? (
             <div className={styles.loading}>Loading…</div>
+          ) : isSvg ? (
+            <div className={styles.svgPreview} dangerouslySetInnerHTML={{ __html: content }} />
           ) : isMarkdown ? (
             <div
               className={styles.markdown}

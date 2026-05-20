@@ -93,6 +93,51 @@ export interface TestCase {
 export const TEST_CASE_STATUSES = ['idle', 'running', 'passed', 'failed'] as const
 export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number]
 
+// ── Content Quality Checker ───────────────────────────────────────────────────
+
+export interface CqcClient {
+  id: string
+  name: string
+  tone: string
+  audience: string
+  restrictions: string
+  keywords: string
+  created_at: string
+}
+
+export interface CqcIssue {
+  type: 'spelling' | 'grammar' | 'brand' | 'fact'
+  severity: 'high' | 'medium' | 'low'
+  snippet: string
+  explanation: string
+  suggested_fix?: string
+}
+
+export interface CqcCheckResult {
+  approved: boolean
+  summary: string
+  issues: CqcIssue[]
+  extracted_text: string
+}
+
+export interface CqcLogEntry {
+  id: string
+  client_id: string
+  user: string
+  content_preview: string
+  issue_count: number
+  approved: boolean
+  summary: string
+  issues_json: string
+  created_at: string
+}
+
+export type CqcProgressStep = 'building_prompt' | 'running_claude' | 'parsing_result' | 'saving_log'
+
+export type CqcSubView = 'check' | 'check-result' | 'clients' | 'log'
+
+// ── Bug reports ───────────────────────────────────────────────────────────────
+
 export interface BugItem {
   id: string
   title: string
@@ -116,4 +161,74 @@ export interface TestRunResult {
   duration: string
   passRate: number
   failedTests: Array<{ id: string; error: string }>
+}
+
+// ─── Site Audit ────────────────────────────────────────────────────────────
+
+export type AuditPhase =
+  | 'intake'
+  | 'running'
+  | 'done'
+  | 'report'
+  | 'goals'
+  | 'cancelled'
+  | 'complete'
+
+export type CmsOption = 'wordpress' | 'nextjs' | 'nuxt' | 'laravel' | 'shopify' | 'custom' | 'other'
+
+export interface AuditIntake {
+  siteUrl: string
+  siteName: string
+  cms: CmsOption
+  cmsOther: string
+  industry: string
+  nicheKeywords: string
+  targetMarket: string
+  competitors: string[]
+  localRepoPath: string | null
+  businessGoal: string
+  budgetTimeline: string
+}
+
+export interface AuditSession {
+  id: string
+  version: number
+  projectId: string
+  siteName: string
+  siteUrl: string
+  createdAt: string
+  updatedAt: string
+  phase: AuditPhase
+  intakePath: string
+  reportPath: string | null
+  taskCount: number
+}
+
+export type DimensionStatus = 'pending' | 'running' | 'done' | 'error' | 'skipped'
+
+export interface AuditDimensionStatus {
+  key: string
+  label: string
+  status: DimensionStatus
+  score: number | null
+  errorMessage: string | null
+}
+
+export type GoalBucket =
+  | 'critical'
+  | 'this_week'
+  | 'high_priority'
+  | 'this_month'
+  | 'ongoing'
+  | 'content_links'
+
+export interface GoalTask {
+  id: string
+  title: string
+  bucket: GoalBucket
+  dimension: string
+  effort: 'Low' | 'Medium' | 'High'
+  owner: string | null
+  notes: string
+  linkedReportSection: string
 }

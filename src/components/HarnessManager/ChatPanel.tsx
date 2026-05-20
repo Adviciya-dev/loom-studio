@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { Paperclip, ArrowUp, Square, ChevronDown } from 'lucide-react'
 import { onHarnessLogLine, onHarnessDone, onEngineError, onTemplates } from '@/lib/events'
 import { engineCommand } from '@/lib/ipc'
 import { useApp } from '@/context/AppContext'
@@ -621,7 +622,7 @@ function ChatPanel({
           )}
         </div>
 
-        <div className={styles.quickActions}>
+        <div className={styles.inputSection}>
           {showAddTemplate && (
             <div className={styles.addTemplatePopup}>
               <div className={styles.addTemplateTitle}>
@@ -655,113 +656,129 @@ function ChatPanel({
               </div>
             </div>
           )}
-          {defaultActions.map((qa) => (
-            <button
-              key={qa.id}
-              className={styles.quickBtn}
-              onClick={() =>
-                setInput((prev) => (prev.trim() ? prev.trimEnd() + '\n\n' + qa.prompt : qa.prompt))
-              }
-              disabled={sending}
-            >
-              {qa.label}
-            </button>
-          ))}
-          {state.customTemplates.map((t) => (
-            <div key={t.id} className={styles.customTplChip}>
+
+          {/* Quick actions — horizontal scroll, no wrap */}
+          <div className={styles.quickActions}>
+            {defaultActions.map((qa) => (
               <button
+                key={qa.id}
                 className={styles.quickBtn}
                 onClick={() =>
-                  setInput((prev) => (prev.trim() ? prev.trimEnd() + '\n\n' + t.prompt : t.prompt))
+                  setInput((prev) =>
+                    prev.trim() ? prev.trimEnd() + '\n\n' + qa.prompt : qa.prompt
+                  )
                 }
                 disabled={sending}
               >
-                {t.label}
+                {qa.label}
               </button>
-              <div className={styles.chipActions}>
+            ))}
+            {state.customTemplates.map((t) => (
+              <div key={t.id} className={styles.customTplChip}>
                 <button
-                  className={styles.chipActionBtn}
-                  onClick={() => openEditTemplate(t)}
-                  title="Edit"
+                  className={styles.quickBtn}
+                  onClick={() =>
+                    setInput((prev) =>
+                      prev.trim() ? prev.trimEnd() + '\n\n' + t.prompt : t.prompt
+                    )
+                  }
+                  disabled={sending}
                 >
-                  ✏
+                  {t.label}
                 </button>
-                <button
-                  className={styles.chipActionBtn}
-                  onClick={() => handleDeleteTemplate(t.id)}
-                  title="Delete"
-                >
-                  ×
-                </button>
+                <div className={styles.chipActions}>
+                  <button
+                    className={styles.chipActionBtn}
+                    onClick={() => openEditTemplate(t)}
+                    title="Edit"
+                  >
+                    ✏
+                  </button>
+                  <button
+                    className={styles.chipActionBtn}
+                    onClick={() => handleDeleteTemplate(t.id)}
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-          <button
-            className={styles.addTemplateBtn}
-            onClick={openAddTemplate}
-            title="Add template"
-            disabled={sending}
-          >
-            +
-          </button>
-        </div>
+            ))}
+            <button
+              className={styles.addTemplateBtn}
+              onClick={openAddTemplate}
+              title="Add template"
+              disabled={sending}
+            >
+              +
+            </button>
+          </div>
 
-        <div className={styles.inputBar}>
-          <div
-            className={styles.inputResizeHandle}
-            onMouseDown={onInputResizeMouseDown}
-            title="Drag to resize"
-          />
-          <textarea
-            ref={textareaRef}
-            className={styles.textarea}
-            style={{ height: inputHeight, maxHeight: inputHeight }}
-            placeholder="Ask Claude anything… (Enter to send, Shift+Enter for new line)"
-            value={input}
-            onChange={onInputChange}
-            onKeyDown={onKeyDown}
-            disabled={sending}
-          />
-          <div className={styles.inputFooter}>
-            <div className={styles.footerLeft}>
-              <button
-                className={styles.attachBtn}
-                onClick={handleAttach}
-                title="Attach file path"
-                disabled={sending}
-              >
-                📎 Attach file
-              </button>
-              <select
-                className={styles.modelSelect}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={sending}
-                title="Claude model"
-              >
-                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-                <option value="claude-opus-4-7">Opus 4.7</option>
-                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-              </select>
-            </div>
-            <div className={styles.footerRight}>
-              {sending && (
+          {/* Unified input card */}
+          <div className={styles.inputCard}>
+            <div
+              className={styles.inputResizeHandle}
+              onMouseDown={onInputResizeMouseDown}
+              title="Drag to resize"
+            />
+            <textarea
+              ref={textareaRef}
+              className={styles.textarea}
+              style={{ height: inputHeight, maxHeight: inputHeight }}
+              placeholder="Ask Claude anything…"
+              value={input}
+              onChange={onInputChange}
+              onKeyDown={onKeyDown}
+              disabled={sending}
+            />
+            <div className={styles.inputToolbar}>
+              <div className={styles.toolbarLeft}>
                 <button
-                  className={styles.stopBtn}
-                  onClick={() => invoke('stop_harness_chat').catch(() => {})}
-                  title="Stop"
+                  className={styles.toolbarBtn}
+                  onClick={handleAttach}
+                  title="Attach file"
+                  disabled={sending}
                 >
-                  ⏹ Stop
+                  <Paperclip size={13} strokeWidth={2} />
+                  <span>Attach</span>
                 </button>
-              )}
-              <button
-                className={styles.sendBtn}
-                onClick={() => send(input)}
-                disabled={!input.trim() || sending}
-                title="Send (Enter)"
-              >
-                {sending ? 'Sending…' : 'Send ▶'}
-              </button>
+                <div className={styles.modelSelectWrap}>
+                  <select
+                    className={styles.modelSelect}
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    disabled={sending}
+                    title="Claude model"
+                  >
+                    <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                    <option value="claude-opus-4-7">Opus 4.7</option>
+                    <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                  </select>
+                  <ChevronDown size={10} strokeWidth={2.5} className={styles.modelChevron} />
+                </div>
+              </div>
+              <div className={styles.toolbarRight}>
+                <span className={styles.inputHint}>⇧↵ new line</span>
+                {sending ? (
+                  <button
+                    className={styles.stopBtn}
+                    onClick={() => invoke('stop_harness_chat').catch(() => {})}
+                    title="Stop"
+                  >
+                    <Square size={12} strokeWidth={2.5} />
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    className={styles.sendBtn}
+                    onClick={() => send(input)}
+                    disabled={!input.trim()}
+                    title="Send (Enter)"
+                  >
+                    <ArrowUp size={13} strokeWidth={2.5} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

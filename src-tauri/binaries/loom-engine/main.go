@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/loom/engine/audit"
+	"github.com/loom/engine/cqc"
 	"github.com/loom/engine/diff"
 	git "github.com/loom/engine/git"
 	"github.com/loom/engine/ipc"
@@ -780,11 +782,116 @@ func main() {
 			}
 			go rerunTest(emitter, projectPath, testID, filePath, headed)
 
+		// ── CQC actions ──────────────────────────────────────────────────────
+		case "cqc_list_clients":
+			var projectPath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("cqc_list_clients: missing project_path")
+				continue
+			}
+			clients, err := cqc.ListClients(projectPath)
+			if err != nil {
+				emitter.EmitEngineError("cqc_list_clients: " + err.Error())
+				continue
+			}
+			emitter.Emit("cqc_clients", clients)
+
+		case "cqc_save_client":
+			var projectPath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("cqc_save_client: missing project_path")
+				continue
+			}
+			var client cqc.Client
+			if err := json.Unmarshal(cmd["client"], &client); err != nil {
+				emitter.EmitEngineError("cqc_save_client: invalid client payload")
+				continue
+			}
+			saved, err := cqc.SaveClient(projectPath, client)
+			if err != nil {
+				emitter.EmitEngineError("cqc_save_client: " + err.Error())
+				continue
+			}
+			clients, _ := cqc.ListClients(projectPath)
+			emitter.Emit("cqc_clients", clients)
+			emitter.Emit("cqc_client_saved", saved)
+
+		case "cqc_delete_client":
+			var projectPath, id string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("cqc_delete_client: missing project_path")
+				continue
+			}
+			if err := json.Unmarshal(cmd["id"], &id); err != nil || id == "" {
+				emitter.EmitEngineError("cqc_delete_client: missing id")
+				continue
+			}
+			if err := cqc.DeleteClient(projectPath, id); err != nil {
+				emitter.EmitEngineError("cqc_delete_client: " + err.Error())
+				continue
+			}
+			clients, _ := cqc.ListClients(projectPath)
+			emitter.Emit("cqc_clients", clients)
+
+		case "cqc_run_text_check":
+			var projectPath, user, text string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("cqc_run_text_check: missing project_path")
+				continue
+			}
+			json.Unmarshal(cmd["user"], &user)   //nolint:errcheck
+			json.Unmarshal(cmd["text"], &text)   //nolint:errcheck
+			var client cqc.Client
+			if err := json.Unmarshal(cmd["client"], &client); err != nil {
+				emitter.EmitEngineError("cqc_run_text_check: invalid client payload")
+				continue
+			}
+			go func() {
+				result, err := cqc.RunTextCheck(emitter, projectPath, client, text, user)
+				if err != nil {
+					emitter.EmitEngineError("cqc_check_failed: " + err.Error())
+					emitter.Emit("cqc_check_error", map[string]interface{}{"error": err.Error()})
+					return
+				}
+				emitter.Emit("cqc_check_result", result)
+				// Refresh the log list so the Log tab shows the new entry immediately.
+				if entries, err2 := cqc.ListLog(projectPath, 100); err2 == nil {
+					emitter.Emit("cqc_log", entries)
+				}
+			}()
+
+		case "cqc_run_image_check":
+			emitter.EmitEngineError("cqc_check_failed: image check is not yet implemented (Phase 2)")
+
+		case "cqc_list_log":
+			var projectPath string
+			if err := json.Unmarshal(cmd["project_path"], &projectPath); err != nil || projectPath == "" {
+				emitter.EmitEngineError("cqc_list_log: missing project_path")
+				continue
+			}
+			limit := 100
+			if raw, ok := cmd["limit"]; ok {
+				var l int
+				if json.Unmarshal(raw, &l) == nil && l > 0 {
+					limit = l
+				}
+			}
+			entries, err := cqc.ListLog(projectPath, limit)
+			if err != nil {
+				emitter.EmitEngineError("cqc_list_log: " + err.Error())
+				continue
+			}
+			emitter.Emit("cqc_log", entries)
+
 		case "ping":
 			emitter.Emit("pong", nil)
 
 		default:
-			fmt.Fprintf(os.Stderr, "engine: unknown action: %s\n", action)
+			if strings.HasPrefix(action, "audit_") {
+				handleAuditAction(action, cmd, emitter)
+			} else {
+				fmt.Fprintf(os.Stderr, "engine: unknown action: %s\n", action)
+			}
 		}
 	}
 }
@@ -1714,6 +1821,73 @@ func createBugReport(projectPath, testID, testFilePath, failureDetails, claudeSu
 		return ""
 	}
 	return bugID
+}
+
+// handleAuditAction dispatches all "audit_*" engine actions to the audit package.
+func handleAuditAction(action string, cmd map[string]json.RawMessage, emitter *ipc.Emitter) {
+	var projectPath string
+	for _, key := range []string{"projectPath", "project_path"} {
+		if raw, ok := cmd[key]; ok {
+			json.Unmarshal(raw, &projectPath) //nolint:errcheck
+			break
+		}
+	}
+
+	switch action {
+	case "audit_read_team":
+		team, err := audit.LoadTeam(projectPath)
+		if err != nil {
+			emitter.EmitEngineError(err.Error())
+			return
+		}
+		emitter.Emit("audit_team_ready", team)
+
+	case "audit_save_team":
+		var team audit.TeamFile
+		if raw, ok := cmd["team"]; !ok || json.Unmarshal(raw, &team) != nil {
+			emitter.EmitEngineError("audit_save_team: invalid team JSON")
+			return
+		}
+		if err := audit.SaveTeam(projectPath, &team); err != nil {
+			emitter.EmitEngineError(err.Error())
+			return
+		}
+		emitter.Emit("audit_team_saved", map[string]bool{"ok": true})
+
+	case "audit_start":
+		var sessionID string
+		if raw, ok := cmd["sessionId"]; ok {
+			json.Unmarshal(raw, &sessionID) //nolint:errcheck
+		}
+		if projectPath == "" || sessionID == "" {
+			emitter.EmitEngineError("audit_start: missing projectPath or sessionId")
+			return
+		}
+		go audit.RunAudit(context.Background(), projectPath, sessionID, emitter)
+
+	case "audit_cancel":
+		var sessionID string
+		if raw, ok := cmd["sessionId"]; ok {
+			json.Unmarshal(raw, &sessionID) //nolint:errcheck
+		}
+		if sessionID != "" {
+			audit.CancelAudit(sessionID)
+		}
+
+	case "audit_generate_report":
+		var sessionID string
+		if raw, ok := cmd["sessionId"]; ok {
+			json.Unmarshal(raw, &sessionID) //nolint:errcheck
+		}
+		if projectPath == "" || sessionID == "" {
+			emitter.EmitEngineError("audit_generate_report: missing projectPath or sessionId")
+			return
+		}
+		go audit.BuildReport(context.Background(), projectPath, sessionID, emitter)
+
+	default:
+		emitter.EmitEngineError("unknown audit action: " + action)
+	}
 }
 
 // chatMu ensures only one harness chat runs at a time.

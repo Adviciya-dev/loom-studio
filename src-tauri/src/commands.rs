@@ -506,6 +506,30 @@ pub fn write_file_content(path: String, content: String) -> Result<(), String> {
     fs::write(Path::new(&path), content).map_err(|e| e.to_string())
 }
 
+/// Opens a native Save dialog and writes binary data (e.g. PDF) to the chosen path.
+/// Returns the saved path or Err("cancelled") if the user dismisses the dialog.
+#[tauri::command]
+pub async fn save_binary_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<FilePath>>();
+    app.dialog()
+        .file()
+        .set_title("Save PDF")
+        .set_file_name(&default_name)
+        .save_file(move |result| { let _ = tx.send(result); });
+    let dest = match rx.await.ok().flatten() {
+        None => return Err("cancelled".to_string()),
+        Some(FilePath::Path(p)) => p.to_string_lossy().to_string(),
+        Some(FilePath::Url(u)) => u.path().to_string(),
+    };
+    std::fs::write(&dest, &data).map_err(|e| format!("Write failed: {e}"))?;
+    Ok(dest)
+}
+
 /// Returns the UTF-8 content of a file. Errors on binary files or files > 500 KB.
 #[tauri::command]
 pub fn read_file_content(path: String) -> Result<String, String> {
@@ -669,4 +693,361 @@ pub fn list_scripts(path: String) -> Vec<HashMap<String, String>> {
             map
         })
         .collect()
+}
+
+// ── CQC thin-wrapper commands ─────────────────────────────────────────────────
+// These forward to the Go engine via engineCommand and relay events back.
+// All heavy logic lives in the Go cqc package.
+
+fn engine_send(state: &tauri::State<'_, crate::EngineState>, payload: serde_json::Value) -> Result<(), String> {
+    let mut line = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    line.push('\n');
+    let mut guard = state.stdin.lock().map_err(|e| e.to_string())?;
+    if let Some(child) = guard.as_mut() {
+        use std::io::Write;
+        child.write(line.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// ── Site Audit IPC commands ───────────────────────────────────────────────────
+
+fn iso_now() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
+/// Write intake JSON to {project_path}/audits/{session_id}/intake.json.
+/// Creates the directory if needed, writes atomically via .tmp → rename,
+/// and removes intake.draft.json on success.
+#[tauri::command]
+pub async fn audit_save_intake(
+    project_path: String,
+    session_id: String,
+    intake: serde_json::Value,
+) -> Result<(), String> {
+    use std::fs;
+    let dir = std::path::Path::new(&project_path)
+        .join("audits")
+        .join(&session_id);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let intake_path = dir.join("intake.json");
+    let tmp_path = dir.join("intake.json.tmp");
+    let draft_path = dir.join("intake.draft.json");
+
+    // Preserve createdAt if this is a re-save.
+    let created_at = if intake_path.exists() {
+        fs::read_to_string(&intake_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v["createdAt"].as_str().map(|s| s.to_string()))
+            .unwrap_or_else(iso_now)
+    } else {
+        iso_now()
+    };
+
+    let site_name = intake["siteName"].clone();
+    let site_url = intake["siteUrl"].clone();
+
+    let envelope = serde_json::json!({
+        "sessionId": session_id,
+        "version": 1,
+        "projectId": "",
+        "siteName": site_name,
+        "siteUrl": site_url,
+        "phase": "intake",
+        "createdAt": created_at,
+        "updatedAt": iso_now(),
+        "reportPath": null,
+        "taskCount": 0,
+        "intake": intake,
+    });
+
+    let data = serde_json::to_string_pretty(&envelope).map_err(|e| e.to_string())?;
+    fs::write(&tmp_path, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, &intake_path).map_err(|e| e.to_string())?;
+
+    let _ = fs::remove_file(&draft_path); // ignore error if not present
+    Ok(())
+}
+
+/// List all audit sessions under {project_path}/audits/, sorted newest-first.
+/// Returns an empty array (not an error) if the audits/ directory does not exist.
+#[tauri::command]
+pub async fn audit_list_sessions(
+    project_path: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let audits_dir = std::path::Path::new(&project_path).join("audits");
+    if !audits_dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&audits_dir).map_err(|e| e.to_string())?;
+    let mut sessions: Vec<serde_json::Value> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| {
+            let intake_path = e.path().join("intake.json");
+            let content = std::fs::read_to_string(intake_path).ok()?;
+            let mut v = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+            normalise_session_id(&mut v);
+            Some(v)
+        })
+        .collect();
+    sessions.sort_by(|a, b| {
+        let ta = a["createdAt"].as_str().unwrap_or("");
+        let tb = b["createdAt"].as_str().unwrap_or("");
+        tb.cmp(ta)
+    });
+    Ok(sessions)
+}
+
+/// Load a single audit session by ID.
+#[tauri::command]
+pub async fn audit_load_session(
+    project_path: String,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let intake_path = std::path::Path::new(&project_path)
+        .join("audits")
+        .join(&session_id)
+        .join("intake.json");
+    let content = std::fs::read_to_string(&intake_path).map_err(|e| e.to_string())?;
+    let mut v = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+    normalise_session_id(&mut v);
+    Ok(v)
+}
+
+/// Map the on-disk "sessionId" key → "id" so the TypeScript AuditSession type
+/// (which uses `id`) works correctly for disk-loaded sessions.
+fn normalise_session_id(v: &mut serde_json::Value) {
+    if let Some(obj) = v.as_object_mut() {
+        if let Some(sid) = obj.remove("sessionId") {
+            obj.insert("id".to_string(), sid);
+        }
+    }
+}
+
+/// Open OS native folder picker. Returns Ok(None) on cancel,
+/// Err("INVALID_REPO_PATH") if the selected directory is empty or unreadable.
+#[tauri::command]
+pub async fn audit_open_folder(
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<FilePath>>();
+    app.dialog().file().pick_folder(move |result| {
+        let _ = tx.send(result);
+    });
+    let path_str = match rx.await.ok().flatten() {
+        None => return Ok(None),
+        Some(FilePath::Path(p)) => p.to_string_lossy().to_string(),
+        Some(FilePath::Url(u)) => u.path().to_string(),
+    };
+    let entries: Vec<_> = std::fs::read_dir(&path_str)
+        .map_err(|_| "INVALID_REPO_PATH".to_string())?
+        .collect();
+    if entries.is_empty() {
+        return Err("INVALID_REPO_PATH".to_string());
+    }
+    Ok(Some(path_str))
+}
+
+/// Write draft JSON to {project_path}/audits/{session_id}/intake.draft.json.
+#[tauri::command]
+pub async fn audit_save_draft(
+    project_path: String,
+    session_id: String,
+    draft: serde_json::Value,
+) -> Result<(), String> {
+    let dir = std::path::Path::new(&project_path)
+        .join("audits")
+        .join(&session_id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let data = serde_json::to_string_pretty(&draft).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("intake.draft.json"), data).map_err(|e| e.to_string())
+}
+
+/// Read intake.draft.json for a session. Returns None if the file does not exist.
+#[tauri::command]
+pub async fn audit_load_draft(
+    project_path: String,
+    session_id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let path = std::path::Path::new(&project_path)
+        .join("audits")
+        .join(&session_id)
+        .join("intake.draft.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let val = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+    Ok(Some(val))
+}
+
+// ── Phase 2 audit execution commands ─────────────────────────────────────────
+
+/// Send audit_start to the Go engine, which launches RunAudit in a goroutine.
+#[tauri::command]
+pub async fn audit_start(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({
+        "action": "audit_start",
+        "projectPath": project_path,
+        "sessionId": session_id
+    }))
+}
+
+/// Send audit_cancel to the Go engine, which calls CancelAudit(sessionId).
+#[tauri::command]
+pub async fn audit_cancel(
+    state: tauri::State<'_, crate::EngineState>,
+    session_id: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({
+        "action": "audit_cancel",
+        "sessionId": session_id
+    }))
+}
+
+// ── Phase 3 report commands ───────────────────────────────────────────────────
+
+/// Send audit_generate_report to the Go engine, which calls BuildReport in a goroutine.
+#[tauri::command]
+pub async fn audit_generate_report(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({
+        "action": "audit_generate_report",
+        "projectPath": project_path,
+        "sessionId": session_id
+    }))
+}
+
+/// Read report.md from disk and return its contents as a string.
+#[tauri::command]
+pub async fn audit_read_report(
+    project_path: String,
+    session_id: String,
+) -> Result<String, String> {
+    let path = std::path::PathBuf::from(&project_path)
+        .join("audits")
+        .join(&session_id)
+        .join("report.md");
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read report.md: {e}"))
+}
+
+/// Open a native Save dialog and copy report.md to the chosen destination.
+/// Returns the destination path, or Err("cancelled") if the user dismisses the dialog.
+#[tauri::command]
+pub async fn audit_export_report(
+    app: tauri::AppHandle,
+    project_path: String,
+    session_id: String,
+    site_name: String,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+
+    let default_name = format!("{}-audit-report.md",
+        site_name.to_lowercase().replace(' ', "-"));
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<FilePath>>();
+    app.dialog()
+        .file()
+        .set_title("Export Audit Report")
+        .set_file_name(&default_name)
+        .save_file(move |result| { let _ = tx.send(result); });
+
+    let dest_path = match rx.await.ok().flatten() {
+        None => return Err("cancelled".to_string()),
+        Some(FilePath::Path(p)) => p.to_string_lossy().to_string(),
+        Some(FilePath::Url(u)) => u.path().to_string(),
+    };
+
+    let src = std::path::PathBuf::from(&project_path)
+        .join("audits")
+        .join(&session_id)
+        .join("report.md");
+
+    std::fs::copy(&src, &dest_path)
+        .map_err(|e| format!("Export failed: {e}"))?;
+
+    Ok(dest_path)
+}
+
+#[tauri::command]
+pub fn get_global_cqc_path() -> String {
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .unwrap_or_else(|_| ".".to_string());
+    format!("{}/.loom-studio", home)
+}
+
+#[tauri::command]
+pub fn cqc_list_clients(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({ "action": "cqc_list_clients", "project_path": project_path }))
+}
+
+#[tauri::command]
+pub fn cqc_save_client(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    client: serde_json::Value,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({ "action": "cqc_save_client", "project_path": project_path, "client": client }))
+}
+
+#[tauri::command]
+pub fn cqc_delete_client(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    id: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({ "action": "cqc_delete_client", "project_path": project_path, "id": id }))
+}
+
+#[tauri::command]
+pub fn cqc_run_text_check(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    client: serde_json::Value,
+    text: String,
+    user: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({
+        "action": "cqc_run_text_check",
+        "project_path": project_path,
+        "client": client,
+        "text": text,
+        "user": user
+    }))
+}
+
+#[tauri::command]
+pub fn cqc_run_image_check(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({ "action": "cqc_run_image_check", "project_path": project_path }))
+}
+
+#[tauri::command]
+pub fn cqc_list_log(
+    state: tauri::State<'_, crate::EngineState>,
+    project_path: String,
+    limit: Option<i64>,
+) -> Result<(), String> {
+    engine_send(&state, serde_json::json!({
+        "action": "cqc_list_log",
+        "project_path": project_path,
+        "limit": limit.unwrap_or(100)
+    }))
 }
