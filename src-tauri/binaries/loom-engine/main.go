@@ -1502,11 +1502,12 @@ func generateAndRunTest(emitter *ipc.Emitter, projectPath, testID, filePath, lin
 }
 
 // rerunTest skips generation and runs the existing .spec.ts directly.
+// If no spec exists yet it falls back to full generation automatically.
 func rerunTest(emitter *ipc.Emitter, projectPath, testID, filePath string, headed bool) {
 	specPath := filepath.Join(projectPath, ".loom-generated", testID+".spec.ts")
 	if _, err := os.Stat(specPath); err != nil {
-		emitter.EmitLogLine("✗ No spec found for " + testID + " — use ⚙ Generate first")
-		emitter.Emit("test_status", map[string]interface{}{"test_id": testID, "status": "failed"})
+		emitter.EmitLogLine("⟳ No spec found for " + testID + " — generating now…")
+		generateTestOnly(emitter, projectPath, testID, filePath, "", headed)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

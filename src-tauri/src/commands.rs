@@ -12,6 +12,19 @@ fn expanded_path() -> String {
         .unwrap_or_default();
     let sep = if cfg!(windows) { ";" } else { ":" };
 
+    #[cfg(windows)]
+    let extra = {
+        // On Windows, npm globals land in %APPDATA%\npm (e.g. C:\Users\name\AppData\Roaming\npm).
+        let appdata = std::env::var("APPDATA").unwrap_or_default();
+        vec![
+            format!("{}\\npm", appdata),
+            format!("{}\\AppData\\Roaming\\npm", home),
+            format!("{}\\AppData\\Local\\Microsoft\\WindowsApps", home),
+            format!("{}\\scoop\\shims", home),
+        ]
+    };
+
+    #[cfg(not(windows))]
     let extra = vec![
         "/opt/homebrew/bin".to_string(),
         "/opt/homebrew/sbin".to_string(),
@@ -53,6 +66,11 @@ pub async fn stop_harness_chat(
     use tauri::Emitter;
     let pid = state.pid.lock().map_err(|e| e.to_string())?.take();
     if let Some(pid) = pid {
+        #[cfg(windows)]
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .output();
+        #[cfg(not(windows))]
         let _ = std::process::Command::new("kill")
             .args(["-TERM", &pid.to_string()])
             .output();
@@ -104,6 +122,25 @@ pub async fn invoke_claude(
     }
     args.push(&prompt);
 
+    // On Windows, npm-installed CLIs are .cmd shims; they must be launched via cmd.exe.
+    // On Unix, spawning "claude" directly works fine.
+    #[cfg(windows)]
+    let mut child = {
+        let mut cmd_args = vec!["/C".to_string(), "claude".to_string()];
+        cmd_args.extend(args.iter().map(|s| s.to_string()));
+        Command::new("cmd")
+            .args(&cmd_args)
+            .current_dir(&project_path)
+            .env("PATH", expanded_path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|_| {
+                "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code".to_string()
+            })?
+    };
+
+    #[cfg(not(windows))]
     let mut child = Command::new("claude")
         .args(&args)
         .current_dir(&project_path)
@@ -111,7 +148,9 @@ pub async fn invoke_claude(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+        .map_err(|_| {
+            "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code".to_string()
+        })?;
 
     // Store PID so stop_harness_chat can kill it.
     if let Some(pid) = child.id() {
