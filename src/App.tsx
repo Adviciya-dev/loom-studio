@@ -38,6 +38,7 @@ import TaskSelectModal from '@/components/TaskSelectModal/TaskSelectModal'
 import DiffOverlay from '@/components/DiffOverlay/DiffOverlay'
 import Toast from '@/components/Toast/Toast'
 import ErrorBanner from '@/components/ErrorBanner/ErrorBanner'
+import UpdateBanner from '@/components/UpdateBanner/UpdateBanner'
 import styles from './App.module.css'
 
 function AppInner() {
@@ -245,6 +246,7 @@ function AppInner() {
       <Sidebar />
       <div className={styles.main}>
         <ErrorBanner />
+        <UpdateBanner />
         <TopBar />
         <div className={styles.content}>
           {state.appMode === 'harness' ? (

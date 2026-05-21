@@ -1,10 +1,10 @@
-name: Build
+name: Build & Release
 
 on:
-  workflow_dispatch:        # trigger manually from GitHub UI
+  workflow_dispatch:
   push:
     tags:
-      - 'v*'               # trigger on version tags like v0.1.0
+      - 'v*'
 
 permissions:
   contents: write
@@ -62,15 +62,18 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      # ── Build Tauri app ───────────────────────────
+      # ── Build Tauri app (signed + updater manifest) ──
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Loom ${{ github.ref_name }}'
           releaseBody: 'See the release notes for details.'
           releaseDraft: true
           prerelease: false
+          updaterJsonKeepUniversal: true
           args: --target ${{ matrix.target }}
