@@ -27,21 +27,32 @@ import (
 	"github.com/loom/engine/task"
 )
 
-// expandPath prepends common binary locations that GUI apps miss on macOS/Linux.
-// claude is typically installed via npm/brew into dirs not in the GUI $PATH.
+// expandPath prepends common binary locations that GUI apps miss.
+// claude and npx are installed via npm into dirs not always in the GUI $PATH.
 func expandPath() {
 	home, _ := os.UserHomeDir()
-	extra := []string{
-		"/opt/homebrew/bin",
-		"/opt/homebrew/sbin",
-		"/usr/local/bin",
-		"/usr/local/sbin",
-		filepath.Join(home, ".npm-packages", "bin"),
-		filepath.Join(home, ".local", "bin"),
-		filepath.Join(home, "npm", "bin"),
-		filepath.Join(home, ".yarn", "bin"),
-		"/usr/bin",
-		"/bin",
+	var extra []string
+	if runtime.GOOS == "windows" {
+		appData := os.Getenv("APPDATA")
+		extra = []string{
+			filepath.Join(appData, "npm"),
+			filepath.Join(home, "AppData", "Roaming", "npm"),
+			filepath.Join(home, "scoop", "shims"),
+			filepath.Join(home, "AppData", "Local", "Microsoft", "WindowsApps"),
+		}
+	} else {
+		extra = []string{
+			"/opt/homebrew/bin",
+			"/opt/homebrew/sbin",
+			"/usr/local/bin",
+			"/usr/local/sbin",
+			filepath.Join(home, ".npm-packages", "bin"),
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, "npm", "bin"),
+			filepath.Join(home, ".yarn", "bin"),
+			"/usr/bin",
+			"/bin",
+		}
 	}
 	cur := os.Getenv("PATH")
 	parts := strings.Split(cur, string(os.PathListSeparator))
@@ -58,6 +69,15 @@ func expandPath() {
 	if len(add) > 0 {
 		os.Setenv("PATH", strings.Join(add, string(os.PathListSeparator))+string(os.PathListSeparator)+cur)
 	}
+}
+
+// claudeBin returns the correct claude executable name for the current OS.
+// On Windows, npm-installed CLIs are .cmd shims that must be named explicitly.
+func claudeBin() string {
+	if runtime.GOOS == "windows" {
+		return "claude.cmd"
+	}
+	return "claude"
 }
 
 // checkDep returns an error message if the named binary is not on PATH.
@@ -97,7 +117,7 @@ func main() {
 	if msg := checkDep("git"); msg != "" {
 		emitter.EmitEngineError("missing_dep:git:" + msg)
 	}
-	if msg := checkDep("claude"); msg != "" {
+	if msg := checkDep(claudeBin()); msg != "" {
 		emitter.EmitEngineError("missing_dep:claude:" + msg)
 	}
 
@@ -1233,7 +1253,7 @@ func runGeneration(ctx context.Context, emitter *ipc.Emitter, projectPath, testI
 	defer genCancel()
 
 	genCmd := exec.CommandContext(genCtx,
-		"claude",
+		claudeBin(),
 		"--dangerously-skip-permissions",
 		"--print",
 		"--verbose",
@@ -1312,7 +1332,7 @@ func fixEnvWithClaude(ctx context.Context, emitter *ipc.Emitter, projectPath, fa
 	defer fixCancel()
 
 	fixCmd := exec.CommandContext(fixCtx,
-		"claude", "--dangerously-skip-permissions", "--print", "--verbose",
+		claudeBin(), "--dangerously-skip-permissions", "--print", "--verbose",
 		"--output-format", "stream-json", prompt)
 	fixCmd.Dir = projectPath
 
@@ -1390,7 +1410,7 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 	defer diagCancel()
 
 	diagCmd := exec.CommandContext(diagCtx,
-		"claude", "--dangerously-skip-permissions", "--print", "--verbose",
+		claudeBin(), "--dangerously-skip-permissions", "--print", "--verbose",
 		"--output-format", "stream-json",
 		buildDiagnosisPrompt(testID, last100Lines(cleanOutput)),
 	)
@@ -1938,7 +1958,7 @@ func runHarnessChat(emitter *ipc.Emitter, message, projectPath string, history [
 	}
 
 	cmd := exec.Command(
-		"claude",
+		claudeBin(),
 		"--dangerously-skip-permissions",
 		"--print",
 		"--verbose",
