@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "productName": "Loom",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.loom.studio",
   "build": {
     "beforeDevCommand": "pnpm dev",
