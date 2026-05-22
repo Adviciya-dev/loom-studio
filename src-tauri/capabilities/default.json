@@ -11,6 +11,8 @@
     "core:window:allow-start-dragging",
     "dialog:allow-open",
     "shell:allow-execute",
-    "shell:allow-spawn"
+    "shell:allow-spawn",
+    "updater:default",
+    "process:allow-relaunch"
   ]
 }
