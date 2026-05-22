@@ -1258,10 +1258,10 @@ func runGeneration(ctx context.Context, emitter *ipc.Emitter, projectPath, testI
 		"--print",
 		"--verbose",
 		"--output-format", "stream-json",
-		buildGenerationPrompt(testID, string(testCaseBytes), taskContent, headed),
 	)
 	genCmd.Dir = projectPath
 	genCmd.Env = append(os.Environ(), "PATH="+os.Getenv("PATH"))
+	genCmd.Stdin = strings.NewReader(buildGenerationPrompt(testID, string(testCaseBytes), taskContent, headed))
 
 	genStdout, err := genCmd.StdoutPipe()
 	if err != nil {
@@ -1333,8 +1333,9 @@ func fixEnvWithClaude(ctx context.Context, emitter *ipc.Emitter, projectPath, fa
 
 	fixCmd := exec.CommandContext(fixCtx,
 		claudeBin(), "--dangerously-skip-permissions", "--print", "--verbose",
-		"--output-format", "stream-json", prompt)
+		"--output-format", "stream-json")
 	fixCmd.Dir = projectPath
+	fixCmd.Stdin = strings.NewReader(prompt)
 
 	var fixRaw bytes.Buffer
 	fixStdout, err := fixCmd.StdoutPipe()
@@ -1412,9 +1413,9 @@ func runDiagnose(ctx context.Context, emitter *ipc.Emitter, projectPath, testID,
 	diagCmd := exec.CommandContext(diagCtx,
 		claudeBin(), "--dangerously-skip-permissions", "--print", "--verbose",
 		"--output-format", "stream-json",
-		buildDiagnosisPrompt(testID, last100Lines(cleanOutput)),
 	)
 	diagCmd.Dir = projectPath
+	diagCmd.Stdin = strings.NewReader(buildDiagnosisPrompt(testID, last100Lines(cleanOutput)))
 	var diagRaw bytes.Buffer
 	if diagStdout, err := diagCmd.StdoutPipe(); err == nil {
 		diagStderr, _ := diagCmd.StderrPipe()
@@ -1963,10 +1964,9 @@ func runHarnessChat(emitter *ipc.Emitter, message, projectPath string, history [
 		"--print",
 		"--verbose",
 		"--output-format", "stream-json",
-		prompt,
 	)
 	cmd.Dir = projectPath
-	cmd.Stdin = nil
+	cmd.Stdin = strings.NewReader(prompt)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
