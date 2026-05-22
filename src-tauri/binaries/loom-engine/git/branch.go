@@ -55,12 +55,13 @@ func ListBranches(projectPath string) ([]string, error) {
 		if b == "" {
 			continue
 		}
-		// Normalise remote refs: "origin/main" → "main", skip HEAD pointer
+		// Normalise remote refs: "origin/main" → "main"
+		// Skip HEAD pointers: "origin/HEAD" shortens to "origin" or "origin/HEAD"
+		if b == "origin" || b == "origin/HEAD" {
+			continue
+		}
 		if strings.HasPrefix(b, "origin/") {
 			b = strings.TrimPrefix(b, "origin/")
-			if b == "HEAD" {
-				continue
-			}
 		}
 		if !seen[b] {
 			seen[b] = true
