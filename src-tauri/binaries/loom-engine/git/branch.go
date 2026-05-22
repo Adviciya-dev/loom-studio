@@ -38,17 +38,32 @@ func GetCurrentBranch(projectPath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// ListBranches returns all local branch names.
+// ListBranches returns local branches plus remote-tracking branches (deduplicated).
+// On a fresh clone only the default branch exists locally; this ensures all
+// remote branches are visible immediately without needing a manual fetch.
 func ListBranches(projectPath string) ([]string, error) {
-	cmd := exec.Command("git", "branch", "--format=%(refname:short)")
+	cmd := exec.Command("git", "branch", "-a", "--format=%(refname:short)")
 	cmd.Dir = projectPath
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git branch: %w", err)
 	}
+	seen := make(map[string]bool)
 	var branches []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if b := strings.TrimSpace(line); b != "" {
+		b := strings.TrimSpace(line)
+		if b == "" {
+			continue
+		}
+		// Normalise remote refs: "origin/main" → "main", skip HEAD pointer
+		if strings.HasPrefix(b, "origin/") {
+			b = strings.TrimPrefix(b, "origin/")
+			if b == "HEAD" {
+				continue
+			}
+		}
+		if !seen[b] {
+			seen[b] = true
 			branches = append(branches, b)
 		}
 	}
