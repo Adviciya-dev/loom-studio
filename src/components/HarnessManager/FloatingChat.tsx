@@ -13,7 +13,7 @@ interface Props {
 function FloatingChat({ projectPath, projectName, currentFilePath, onFileChange }: Props) {
   const [open, setOpen] = useState(false)
   const [pendingAttach, setPendingAttach] = useState<string | null>(null)
-  const [size, setSize] = useState({ w: 360, h: 500 })
+  const [size, setSize] = useState({ w: 420, h: 600 })
   const resizeRef = useRef<{
     startX: number
     startY: number
