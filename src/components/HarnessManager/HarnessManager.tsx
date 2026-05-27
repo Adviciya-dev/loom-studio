@@ -29,7 +29,7 @@ function tabIcon(tab: Tab): string {
 
 function HarnessManager() {
   const { state } = useApp()
-  const { activeProject } = state
+  const { activeProject, harnessExplorerOpen } = state
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -185,21 +185,27 @@ function HarnessManager() {
 
   return (
     <div className={styles.container} ref={containerRef}>
-      {/* ── Left: file explorer ── */}
-      <div className={styles.left} style={{ width: `${splitPct}%` }}>
-        <FileExplorer
-          projectPath={activeProject.path}
-          reloadKey={reloadKey}
-          onAttachFile={setPendingAttach}
-          onFileDragStart={onFileDragStart}
-          onOpenFile={openFile}
-        />
-      </div>
-
-      <div className={styles.divider} onMouseDown={onDividerMouseDown} />
+      {/* ── Left: file explorer (collapsible via sidebar folder button) ── */}
+      {harnessExplorerOpen && (
+        <>
+          <div className={styles.left} style={{ width: `${splitPct}%` }}>
+            <FileExplorer
+              projectPath={activeProject.path}
+              reloadKey={reloadKey}
+              onAttachFile={setPendingAttach}
+              onFileDragStart={onFileDragStart}
+              onOpenFile={openFile}
+            />
+          </div>
+          <div className={styles.divider} onMouseDown={onDividerMouseDown} />
+        </>
+      )}
 
       {/* ── Right: tab bar + content ── */}
-      <div className={styles.right} style={{ width: `${100 - splitPct}%` }}>
+      <div
+        className={styles.right}
+        style={{ width: harnessExplorerOpen ? `${100 - splitPct}%` : '100%' }}
+      >
         {/* Tab bar */}
         <div className={styles.tabBar}>
           {tabs.map((tab) => (

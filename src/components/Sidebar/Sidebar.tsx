@@ -30,7 +30,13 @@ function Sidebar() {
         <button
           className={`${styles.navItem} ${appMode === 'harness' ? styles.active : ''}`}
           title="Harness Manager"
-          onClick={() => dispatch({ type: 'SET_APP_MODE', mode: 'harness' })}
+          onClick={() => {
+            if (appMode === 'harness') {
+              dispatch({ type: 'TOGGLE_HARNESS_EXPLORER' })
+            } else {
+              dispatch({ type: 'SET_APP_MODE', mode: 'harness' })
+            }
+          }}
         >
           <FolderOpen size={18} strokeWidth={1.75} />
         </button>

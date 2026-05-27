@@ -4,7 +4,88 @@ import { useApp } from '@/context/AppContext'
 import { engineCommand } from '@/lib/ipc'
 import styles from './BottomBar.module.css'
 
-function BottomBar() {
+type PanelTab = 'output' | 'terminal'
+
+interface BottomBarProps {
+  logOpen: boolean
+  logTab: PanelTab
+  onTogglePanel: (tab: PanelTab) => void
+}
+
+const MODE_LABELS: Record<string, string> = {
+  run: 'Task Runner',
+  harness: 'Harness',
+  qa: 'QA',
+  github: 'GitHub',
+  cqc: 'CQC',
+  audit: 'Audit',
+}
+
+// ── OUTPUT / TERMINAL chips — shared by both bar variants ────────────
+function PanelChips({
+  logOpen,
+  logTab,
+  onTogglePanel,
+}: {
+  logOpen: boolean
+  logTab: PanelTab
+  onTogglePanel: (tab: PanelTab) => void
+}) {
+  return (
+    <div className={styles.panelChips}>
+      {(['output', 'terminal'] as PanelTab[]).map((tab) => {
+        const isActive = logOpen && logTab === tab
+        return (
+          <button
+            key={tab}
+            className={`${styles.panelChip} ${isActive ? styles.panelChipActive : ''}`}
+            onClick={() => onTogglePanel(tab)}
+            title={isActive ? `Collapse ${tab}` : `Open ${tab}`}
+          >
+            {!logOpen && <span className={styles.chipCaret}>▴</span>}
+            {tab === 'output' ? 'OUTPUT' : 'TERMINAL'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── VS Code-style status bar (non-run modes) ─────────────────────────
+function StatusBar({ logOpen, logTab, onTogglePanel }: BottomBarProps) {
+  const { state } = useApp()
+  const { appMode, activeProject, gitBranch, engineStatus } = state
+
+  return (
+    <div className={styles.statusBar}>
+      <div className={styles.statusLeft}>
+        <span className={styles.statusMode}>{MODE_LABELS[appMode] ?? appMode}</span>
+        {activeProject && (
+          <>
+            <span className={styles.statusSep}>·</span>
+            <span className={styles.statusItem}>{activeProject.name}</span>
+          </>
+        )}
+        {gitBranch && (
+          <>
+            <span className={styles.statusSep}>·</span>
+            <span className={styles.statusItem}>⎇ {gitBranch}</span>
+          </>
+        )}
+        {engineStatus !== 'idle' && (
+          <>
+            <span className={styles.statusSep}>·</span>
+            <span className={styles.statusRunning}>● {engineStatus}</span>
+          </>
+        )}
+      </div>
+      <PanelChips logOpen={logOpen} logTab={logTab} onTogglePanel={onTogglePanel} />
+    </div>
+  )
+}
+
+// ── Chat bar (run mode only) ─────────────────────────────────────────
+function ChatBar({ logOpen, logTab, onTogglePanel }: BottomBarProps) {
   const { state, dispatch } = useApp()
   const { engineStatus, activeTasks, activeTaskIndex, activeProject } = state
   const activeTask = activeTasks[activeTaskIndex] ?? null
@@ -73,8 +154,15 @@ function BottomBar() {
           ↵
         </button>
       )}
+      <PanelChips logOpen={logOpen} logTab={logTab} onTogglePanel={onTogglePanel} />
     </div>
   )
+}
+
+// ── Root ─────────────────────────────────────────────────────────────
+function BottomBar(props: BottomBarProps) {
+  const { state } = useApp()
+  return state.appMode === 'run' ? <ChatBar {...props} /> : <StatusBar {...props} />
 }
 
 export default BottomBar

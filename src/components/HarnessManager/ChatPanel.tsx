@@ -243,6 +243,7 @@ function ChatPanel({
   isDragOver = false,
 }: Props) {
   const { state, dispatch } = useApp()
+
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)

@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: space-between;
   height: var(--topbar-height);
-  padding: 0 var(--space-md);
+  padding: 0 10px;
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -25,7 +25,7 @@
 
 .divider {
   width: 1px;
-  height: 18px;
+  height: 14px;
   background-color: var(--border);
   flex-shrink: 0;
   opacity: 0.7;

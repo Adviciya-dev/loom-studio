@@ -73,7 +73,6 @@ interface FileEditorProps {
 export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorProps) {
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const valueRef = useRef<string>('')
   const dirtyRef = useRef(false)
@@ -98,7 +97,6 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
 
   const save = useCallback(async () => {
     if (!dirtyRef.current) return
-    setSaving(true)
     try {
       await invoke('write_file_content', { path, content: valueRef.current })
       dirtyRef.current = false
@@ -108,8 +106,6 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
       onSaved?.()
     } catch (e: unknown) {
       setSaveMsg(`Error: ${String(e)}`)
-    } finally {
-      setSaving(false)
     }
   }, [path, onDirtyChange, onSaved])
 
@@ -171,7 +167,6 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
         <span className={styles.fileIcon}>📄</span>
         <span className={styles.fileName}>{fileName}</span>
         <span className={styles.filePath}>{path}</span>
-        <span className={styles.langBadge}>{language}</span>
         {saveMsg && (
           <span
             className={`${styles.saveMsg} ${saveMsg.startsWith('Error') ? styles.saveMsgError : ''}`}
@@ -179,14 +174,6 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
             {saveMsg}
           </span>
         )}
-        <button
-          className={styles.saveBtn}
-          onClick={save}
-          disabled={saving || !dirtyRef.current}
-          title="Save (⌘S)"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
       </div>
 
       {/* Monaco Editor */}

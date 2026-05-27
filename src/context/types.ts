@@ -40,6 +40,7 @@ export interface AppState {
   gitBehind: number
   gitSshError: boolean
   appMode: 'run' | 'harness' | 'qa' | 'github' | 'cqc' | 'audit'
+  harnessExplorerOpen: boolean
   ghAvailable: boolean | null
   ghDefaultBranch: string
   gitCommitsOnBranch: string[]
@@ -99,6 +100,7 @@ export const initialState: AppState = {
   gitBehind: 0,
   gitSshError: false,
   appMode: 'run',
+  harnessExplorerOpen: true,
   ghAvailable: null,
   ghDefaultBranch: '',
   gitCommitsOnBranch: [],
@@ -154,6 +156,7 @@ export type AppAction =
   | { type: 'SET_GIT_REMOTE_INFO'; url: string; ahead: number; behind: number }
   | { type: 'SET_GIT_SSH_ERROR'; value: boolean }
   | { type: 'SET_APP_MODE'; mode: 'run' | 'harness' | 'qa' | 'github' | 'cqc' | 'audit' }
+  | { type: 'TOGGLE_HARNESS_EXPLORER' }
   | { type: 'SET_GH_AVAILABLE'; available: boolean }
   | { type: 'SET_GH_DEFAULT_BRANCH'; branch: string }
   | { type: 'SET_GIT_COMMITS_ON_BRANCH'; commits: string[] }

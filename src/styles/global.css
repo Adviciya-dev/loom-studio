@@ -48,8 +48,8 @@
 
   /* ── Layout ──────────────────────────────────────── */
   --sidebar-width: 52px;
-  --topbar-height: 50px;
-  --bottombar-height: 40px;
+  --topbar-height: 38px;
+  --bottombar-height: 26px;
 
   /* ── Radius ──────────────────────────────────────── */
   --radius-sm: 5px;

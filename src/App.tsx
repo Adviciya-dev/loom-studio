@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { AppProvider, useApp } from '@/context/AppContext'
 import { ErrorBoundary } from '@/ErrorBoundary'
@@ -47,6 +47,19 @@ function AppInner() {
   activeProjectRef.current = state.activeProject
   const engineStatusRef = useRef(state.engineStatus)
   engineStatusRef.current = state.engineStatus
+
+  // ── Log panel open/tab state (lifted so BottomBar can drive it) ──
+  const [logOpen, setLogOpen] = useState(true)
+  const [logTab, setLogTab] = useState<'output' | 'terminal'>('output')
+
+  function handleTogglePanel(tab: 'output' | 'terminal') {
+    if (logOpen && logTab === tab) {
+      setLogOpen(false)
+    } else {
+      setLogOpen(true)
+      setLogTab(tab)
+    }
+  }
 
   // Generation counter: each effect run gets a unique number. Callbacks check
   // it before dispatching so stale listeners from a previous run (e.g. React
@@ -263,8 +276,13 @@ function AppInner() {
             <Workspace />
           )}
         </div>
-        <LogPanel />
-        <BottomBar />
+        <LogPanel
+          open={logOpen}
+          onOpenChange={setLogOpen}
+          activeTab={logTab}
+          onActiveTabChange={setLogTab}
+        />
+        <BottomBar logOpen={logOpen} logTab={logTab} onTogglePanel={handleTogglePanel} />
       </div>
       <TaskSelectModal />
       <DiffOverlay />

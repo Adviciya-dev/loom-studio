@@ -12,8 +12,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px;
-  height: 36px;
+  padding: 0 10px;
+  height: 22px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-surface);

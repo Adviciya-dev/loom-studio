@@ -164,7 +164,16 @@ function ThinkingIndicator() {
   )
 }
 
-function LogPanel() {
+type PanelTab = 'output' | 'terminal'
+
+interface LogPanelProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  activeTab: PanelTab
+  onActiveTabChange: (tab: PanelTab) => void
+}
+
+function LogPanel({ open, onOpenChange, activeTab, onActiveTabChange }: LogPanelProps) {
   const { state } = useApp()
   const { engineStatus } = state
 
@@ -173,6 +182,12 @@ function LogPanel() {
   const linesRef = useRef<LogLine[]>([])
   const rafRef = useRef<number | null>(null)
   const [logLines, setLogLines] = useState<LogLine[]>([])
+
+  // Keep latest callbacks in refs so the mount-once effect can call them
+  const onOpenChangeRef = useRef(onOpenChange)
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange
+  }, [onOpenChange])
 
   function flushLines() {
     setLogLines([...linesRef.current])
@@ -198,7 +213,7 @@ function LogPanel() {
         linesRef.current = []
         setLogLines([])
         setAutoScroll(true)
-        setOpen(true)
+        onOpenChangeRef.current(true)
       }
     }).then((fn) => unlistens.push(fn))
 
@@ -208,7 +223,6 @@ function LogPanel() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [open, setOpen] = useState(true)
   const [panelHeight, setPanelHeight] = useState(DEFAULT_H)
   const [autoScroll, setAutoScroll] = useState(true)
   const [scrollTop, setScrollTop] = useState(0)
@@ -216,9 +230,6 @@ function LogPanel() {
   const isRunning = engineStatus === 'running'
   const virtualize = logLines.length > VIRT_THRESHOLD
 
-  // Tab state
-  type PanelTab = 'output' | 'terminal'
-  const [activeTab, setActiveTab] = useState<PanelTab>('output')
   const [terminalMounted, setTerminalMounted] = useState(false)
   const [terminalId] = useState(() => crypto.randomUUID())
 
@@ -306,21 +317,19 @@ function LogPanel() {
     )
   }
 
-  const totalH = open ? panelHeight : HEADER_H
+  // All hooks are above — safe to early-return now
+  if (!open) return null
 
   return (
-    <div className={styles.panel} style={{ height: totalH }}>
-      {open && <div className={styles.resizeHandle} onMouseDown={startResize} />}
+    <div className={styles.panel} style={{ height: panelHeight }}>
+      <div className={styles.resizeHandle} onMouseDown={startResize} />
 
       <div className={styles.header}>
         {/* Tab buttons */}
         <div className={styles.tabs}>
           <button
             className={[styles.tabBtn, activeTab === 'output' ? styles.tabActive : ''].join(' ')}
-            onClick={() => {
-              setActiveTab('output')
-              setOpen(true)
-            }}
+            onClick={() => onActiveTabChange('output')}
           >
             <span className={styles.tabLabel}>OUTPUT</span>
             {isRunning && activeTab === 'output' && (
@@ -333,9 +342,8 @@ function LogPanel() {
           <button
             className={[styles.tabBtn, activeTab === 'terminal' ? styles.tabActive : ''].join(' ')}
             onClick={() => {
-              setActiveTab('terminal')
+              onActiveTabChange('terminal')
               setTerminalMounted(true)
-              setOpen(true)
             }}
           >
             <span className={styles.tabLabel}>TERMINAL</span>
@@ -354,7 +362,7 @@ function LogPanel() {
               ⚠ {conflictFiles.length} conflict{conflictFiles.length > 1 ? 's' : ''}
             </button>
           )}
-          {activeTab === 'output' && !autoScroll && open && logLines.length > 0 && (
+          {activeTab === 'output' && !autoScroll && logLines.length > 0 && (
             <button
               className={styles.scrollBtn}
               onClick={() => {
@@ -379,40 +387,38 @@ function LogPanel() {
           )}
           <button
             className={styles.toggleBtn}
-            onClick={() => setOpen((o) => !o)}
-            title={open ? 'Collapse panel' : 'Expand panel'}
+            onClick={() => onOpenChange(false)}
+            title="Collapse panel"
           >
-            {open ? '▾' : '▴'}
+            ▾
           </button>
         </div>
       </div>
 
       {/* OUTPUT body */}
-      {open && (
-        <div
-          className={styles.body}
-          ref={bodyRef}
-          onScroll={handleScroll}
-          style={{ display: activeTab === 'output' ? undefined : 'none' }}
-        >
-          {logLines.length === 0 && isRunning ? (
-            <ThinkingIndicator />
-          ) : logLines.length === 0 ? (
-            <div className={styles.empty}>
-              <span className={styles.emptyPrompt}>$</span>
-              <span>waiting for output…</span>
-            </div>
-          ) : (
-            <>
-              {renderLines()}
-              {isRunning && <ThinkingIndicator />}
-            </>
-          )}
-        </div>
-      )}
+      <div
+        className={styles.body}
+        ref={bodyRef}
+        onScroll={handleScroll}
+        style={{ display: activeTab === 'output' ? undefined : 'none' }}
+      >
+        {logLines.length === 0 && isRunning ? (
+          <ThinkingIndicator />
+        ) : logLines.length === 0 ? (
+          <div className={styles.empty}>
+            <span className={styles.emptyPrompt}>$</span>
+            <span>waiting for output…</span>
+          </div>
+        ) : (
+          <>
+            {renderLines()}
+            {isRunning && <ThinkingIndicator />}
+          </>
+        )}
+      </div>
 
       {/* TERMINAL body — lazy-mounted, kept alive with display:none on tab switch */}
-      {open && terminalMounted && (
+      {terminalMounted && (
         <div style={{ display: activeTab === 'terminal' ? undefined : 'none' }}>
           <Terminal
             id={terminalId}

@@ -161,6 +161,9 @@ export function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_APP_MODE':
       return { ...state, appMode: action.mode }
 
+    case 'TOGGLE_HARNESS_EXPLORER':
+      return { ...state, harnessExplorerOpen: !state.harnessExplorerOpen }
+
     case 'SET_GH_AVAILABLE':
       return { ...state, ghAvailable: action.available }
 
