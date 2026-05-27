@@ -343,6 +343,8 @@ function ChatPanel({
 
       onHarnessLogLine((line) => {
         if (cancelled) return
+        // Ignore events from another ChatPanel instance (e.g. FloatingChat)
+        if (!isStreamingRef.current) return
         const kind = line.kind ?? 'prose'
 
         if (kind === 'prose') {
@@ -381,6 +383,8 @@ function ChatPanel({
 
       onHarnessDone(() => {
         if (cancelled) return
+        // Only the instance that initiated the request should process completion
+        if (!isStreamingRef.current) return
         isStreamingRef.current = false
         const duration = Date.now() - sendTimeRef.current
         const touched = new Set(touchedFilesRef.current)
@@ -434,6 +438,7 @@ function ChatPanel({
 
       onEngineError((msg) => {
         if (cancelled) return
+        if (!isStreamingRef.current) return
         if (!msg.startsWith('missing_dep:')) {
           isStreamingRef.current = false
           setStreamBlocks([])
