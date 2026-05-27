@@ -192,22 +192,37 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
             tabSize: 2,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
-            renderLineHighlight: 'line',
+            renderLineHighlight: 'none',
             renderWhitespace: 'none',
             wordWrap: 'off',
             automaticLayout: true,
             scrollbar: {
               verticalScrollbarSize: 6,
               horizontalScrollbarSize: 6,
+              useShadows: false,
             },
             padding: { top: 8, bottom: 8 },
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
             overviewRulerBorder: false,
             glyphMargin: false,
-            folding: true,
+            folding: false,
             lineNumbers: 'on',
             lineNumbersMinChars: 3,
+            // ── Scroll performance ──────────────────────
+            smoothScrolling: false,
+            fastScrollSensitivity: 5,
+            mouseWheelScrollSensitivity: 1,
+            // ── Reduce per-frame decoration work ────────
+            occurrencesHighlight: 'off',
+            selectionHighlight: false,
+            renderControlCharacters: false,
+            // ── Disable features unused in view-only editing
+            hover: { enabled: false },
+            quickSuggestions: false,
+            suggestOnTriggerCharacters: false,
+            parameterHints: { enabled: false },
+            codeLens: false,
           }}
         />
       </div>
