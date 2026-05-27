@@ -68,15 +68,23 @@ interface FileEditorProps {
   path: string
   onDirtyChange: (dirty: boolean) => void
   onSaved?: () => void
+  /** Increment to reload content from disk (e.g. after external write) */
+  externalReloadKey?: number
 }
 
-export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorProps) {
+export default function FileEditor({
+  path,
+  onDirtyChange,
+  onSaved,
+  externalReloadKey,
+}: FileEditorProps) {
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const valueRef = useRef<string>('')
   const dirtyRef = useRef(false)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const saveMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fileName = path.split('/').pop() ?? path
   const language = detectLanguage(path)
@@ -95,14 +103,55 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
       .catch((e: unknown) => setError(String(e)))
   }, [path]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reload file from disk without remounting the editor (preserves scroll/cursor)
+  const reloadFromDisk = useCallback(async () => {
+    try {
+      const c = await invoke<string>('read_file_content', { path })
+      valueRef.current = c
+      dirtyRef.current = false
+      onDirtyChange(false)
+      if (editorRef.current) {
+        const model = editorRef.current.getModel()
+        if (model) {
+          // Preserve viewport & cursor so the view doesn't jump
+          const pos = editorRef.current.getPosition()
+          const scrollTop = editorRef.current.getScrollTop()
+          model.setValue(c)
+          if (pos) editorRef.current.setPosition(pos)
+          editorRef.current.setScrollTop(scrollTop)
+        }
+      }
+      if (saveMsgTimerRef.current) clearTimeout(saveMsgTimerRef.current)
+      setSaveMsg('Updated')
+      saveMsgTimerRef.current = setTimeout(() => setSaveMsg(null), 1800)
+    } catch {
+      // Silently ignore — file may be mid-write; next reload will catch it
+    }
+  }, [path, onDirtyChange])
+
+  // Reload whenever an external change is signalled (e.g. FloatingChat wrote the file)
+  const prevExternalKeyRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (externalReloadKey === undefined) return
+    if (prevExternalKeyRef.current === undefined) {
+      prevExternalKeyRef.current = externalReloadKey
+      return // skip the initial render
+    }
+    if (externalReloadKey !== prevExternalKeyRef.current) {
+      prevExternalKeyRef.current = externalReloadKey
+      reloadFromDisk()
+    }
+  }, [externalReloadKey, reloadFromDisk])
+
   const save = useCallback(async () => {
     if (!dirtyRef.current) return
     try {
       await invoke('write_file_content', { path, content: valueRef.current })
       dirtyRef.current = false
       onDirtyChange(false)
+      if (saveMsgTimerRef.current) clearTimeout(saveMsgTimerRef.current)
       setSaveMsg('Saved')
-      setTimeout(() => setSaveMsg(null), 1500)
+      saveMsgTimerRef.current = setTimeout(() => setSaveMsg(null), 1500)
       onSaved?.()
     } catch (e: unknown) {
       setSaveMsg(`Error: ${String(e)}`)

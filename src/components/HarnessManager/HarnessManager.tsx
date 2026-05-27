@@ -263,6 +263,7 @@ function HarnessManager() {
                   path={tab.path}
                   onDirtyChange={(dirty) => setTabDirty(tab.id, dirty)}
                   onSaved={triggerReload}
+                  externalReloadKey={reloadKey}
                 />
               </div>
             ))}
