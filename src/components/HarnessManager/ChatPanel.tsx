@@ -83,6 +83,8 @@ interface Props {
   onAttachConsumed?: () => void
   dropZoneRef?: React.RefObject<HTMLDivElement>
   isDragOver?: boolean
+  /** When true, hides the internal "Claude Chat" header (used by FloatingChat overlay) */
+  compact?: boolean
 }
 
 function ts() {
@@ -241,6 +243,7 @@ function ChatPanel({
   onAttachConsumed,
   dropZoneRef,
   isDragOver = false,
+  compact = false,
 }: Props) {
   const { state, dispatch } = useApp()
 
@@ -573,20 +576,22 @@ function ChatPanel({
   return (
     <>
       <div className={styles.panel}>
-        <div className={styles.header}>
-          <span className={styles.title}>Claude Chat</span>
-          {(messages.length > 0 || sending) && (
-            <button
-              className={styles.clearBtn}
-              onClick={() => {
-                setMessages([])
-                setStreamBlocks([])
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
+        {!compact && (
+          <div className={styles.header}>
+            <span className={styles.title}>Claude Chat</span>
+            {(messages.length > 0 || sending) && (
+              <button
+                className={styles.clearBtn}
+                onClick={() => {
+                  setMessages([])
+                  setStreamBlocks([])
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
 
         <div className={styles.messages} ref={listRef}>
           {messages.length === 0 && !sending && (

@@ -4,6 +4,7 @@ import { registerDropZone, updateHover, tryDrop } from '@/lib/fileDrag'
 import FileExplorer from './FileExplorer'
 import ChatPanel from './ChatPanel'
 import FileEditor from './FileEditor'
+import FloatingChat from './FloatingChat'
 import styles from './HarnessManager.module.css'
 
 // ── Tab types ────────────────────────────────────────────────────────
@@ -266,6 +267,17 @@ function HarnessManager() {
               </div>
             ))}
         </div>
+
+        {/* Floating chat — shown only when a file tab is active */}
+        {activeTab?.type === 'file' && (
+          <FloatingChat
+            key={(activeTab as FileTab).path}
+            projectPath={activeProject.path}
+            projectName={activeProject.name}
+            currentFilePath={(activeTab as FileTab).path}
+            onFileChange={triggerReload}
+          />
+        )}
       </div>
 
       {/* Floating drag ghost — follows cursor while dragging */}

@@ -14,7 +14,8 @@
 
 .right {
   min-width: 280px;
-  overflow: hidden;
+  overflow: visible; /* allow FloatingChat to escape beyond the panel edge */
+  position: relative;
   display: flex;
   flex-direction: column;
 }

@@ -1,0 +1,202 @@
+/* ── Floating action button ───────────────────── */
+
+.fab {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 40;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  box-shadow:
+    0 4px 16px rgba(91, 124, 246, 0.45),
+    var(--shadow-md);
+  transition:
+    background 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s;
+  animation: fabIn 0.2s ease-out;
+}
+
+.fab:hover {
+  background: var(--accent-hover);
+  transform: scale(1.08);
+  box-shadow:
+    0 6px 24px rgba(91, 124, 246, 0.55),
+    var(--shadow-md);
+}
+
+@keyframes fabIn {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Floating window ──────────────────────────── */
+
+.window {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 40;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px rgba(91, 124, 246, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: windowIn 0.18s ease-out;
+  min-width: 280px;
+  min-height: 300px;
+}
+
+@keyframes windowIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ── Resize handle ────────────────────────────── */
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 10;
+}
+
+.resizeHandle::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  border-top: 1.5px solid var(--border);
+  border-left: 1.5px solid var(--border);
+  border-radius: 1px;
+  transition: border-color 0.15s;
+}
+
+.resizeHandle:hover::before {
+  border-color: var(--accent);
+}
+
+/* ── Window header ────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+  height: 36px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  user-select: none;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.headerAvatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.headerSep {
+  font-size: 10px;
+  color: var(--border);
+  flex-shrink: 0;
+}
+
+.headerFile {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.headerBtn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.headerBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Body ─────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
