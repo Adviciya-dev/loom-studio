@@ -127,14 +127,25 @@ interface Props {
   reloadKey?: number
   onAttachFile?: (path: string) => void
   onFileDragStart?: (path: string, e: React.MouseEvent) => void
+  /** When provided, clicking a file opens a tab instead of a modal */
+  onOpenFile?: (path: string) => void
 }
 
-function FileExplorer({ projectPath, reloadKey, onAttachFile, onFileDragStart }: Props) {
+function FileExplorer({
+  projectPath,
+  reloadKey,
+  onAttachFile,
+  onFileDragStart,
+  onOpenFile,
+}: Props) {
   const [tree, setTree] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Modal only used when no onOpenFile handler is provided (standalone use)
   const [modalPath, setModalPath] = useState<string | null>(null)
+
+  const handleFileClick = onOpenFile ?? setModalPath
 
   const load = useCallback(() => {
     setLoading(true)
@@ -190,7 +201,7 @@ function FileExplorer({ projectPath, reloadKey, onAttachFile, onFileDragStart }:
             depth={0}
             expanded={expanded}
             onToggle={toggleExpanded}
-            onFileClick={setModalPath}
+            onFileClick={handleFileClick}
             rootMissing={missingCount}
             onAttachFile={onAttachFile}
             onFileDragStart={onFileDragStart}
@@ -198,7 +209,8 @@ function FileExplorer({ projectPath, reloadKey, onAttachFile, onFileDragStart }:
         )}
       </div>
 
-      {modalPath && (
+      {/* Modal only shown when used without an onOpenFile handler */}
+      {!onOpenFile && modalPath && (
         <FileModal
           path={modalPath}
           onClose={() => setModalPath(null)}

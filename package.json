@@ -15,6 +15,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.3.1",
@@ -25,6 +26,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.11.0",
+    "monaco-editor": "^0.55.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",

@@ -3,7 +3,29 @@ import { useApp } from '@/context/AppContext'
 import { registerDropZone, updateHover, tryDrop } from '@/lib/fileDrag'
 import FileExplorer from './FileExplorer'
 import ChatPanel from './ChatPanel'
+import FileEditor from './FileEditor'
 import styles from './HarnessManager.module.css'
+
+// ── Tab types ────────────────────────────────────────────────────────
+type ChatTab = { id: 'chat'; type: 'chat' }
+type FileTab = { id: string; type: 'file'; path: string; dirty: boolean }
+type Tab = ChatTab | FileTab
+
+function tabLabel(tab: Tab): string {
+  if (tab.type === 'chat') return 'Claude Chat'
+  return (tab as FileTab).path.split('/').pop() ?? (tab as FileTab).path
+}
+
+function tabIcon(tab: Tab): string {
+  if (tab.type === 'chat') return '⎇'
+  const ext = (tab as FileTab).path.split('.').pop()?.toLowerCase() ?? ''
+  if (ext === 'md' || ext === 'mdx') return '📄'
+  if (ext === 'ts' || ext === 'tsx' || ext === 'js' || ext === 'jsx') return '⚡'
+  if (ext === 'css' || ext === 'scss') return '🎨'
+  if (ext === 'rs') return '🦀'
+  if (ext === 'json' || ext === 'jsonc') return '{}'
+  return '📄'
+}
 
 function HarnessManager() {
   const { state } = useApp()
@@ -18,6 +40,40 @@ function HarnessManager() {
   useEffect(() => {
     triggerReload()
   }, [state.gitBranch, state.gitAhead, triggerReload])
+
+  // ── Tab state ─────────────────────────────────────────────────────────
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 'chat', type: 'chat' }])
+  const [activeTabId, setActiveTabId] = useState<string>('chat')
+
+  function openFile(path: string) {
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.type === 'file' && (t as FileTab).path === path)
+      if (existing) {
+        setActiveTabId(existing.id)
+        return prev
+      }
+      const newTab: FileTab = { id: `file-${Date.now()}`, type: 'file', path, dirty: false }
+      setActiveTabId(newTab.id)
+      return [...prev, newTab]
+    })
+  }
+
+  function closeTab(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === id)
+      const next = prev.filter((t) => t.id !== id)
+      if (activeTabId === id) {
+        const newActive = next[Math.min(idx, next.length - 1)]
+        setActiveTabId(newActive?.id ?? 'chat')
+      }
+      return next
+    })
+  }
+
+  function setTabDirty(id: string, dirty: boolean) {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, dirty } : t)))
+  }
 
   // ── Panel split ──────────────────────────────────────────
   const [splitPct, setSplitPct] = useState(() => {
@@ -125,29 +181,85 @@ function HarnessManager() {
     )
   }
 
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
+
   return (
     <div className={styles.container} ref={containerRef}>
+      {/* ── Left: file explorer ── */}
       <div className={styles.left} style={{ width: `${splitPct}%` }}>
         <FileExplorer
           projectPath={activeProject.path}
           reloadKey={reloadKey}
           onAttachFile={setPendingAttach}
           onFileDragStart={onFileDragStart}
+          onOpenFile={openFile}
         />
       </div>
 
       <div className={styles.divider} onMouseDown={onDividerMouseDown} />
 
+      {/* ── Right: tab bar + content ── */}
       <div className={styles.right} style={{ width: `${100 - splitPct}%` }}>
-        <ChatPanel
-          projectPath={activeProject.path}
-          projectName={activeProject.name}
-          onFileChange={triggerReload}
-          pendingAttach={pendingAttach}
-          onAttachConsumed={() => setPendingAttach(null)}
-          dropZoneRef={dropZoneRef}
-          isDragOver={isDragOver}
-        />
+        {/* Tab bar */}
+        <div className={styles.tabBar}>
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`${styles.tab} ${tab.id === activeTabId ? styles.tabActive : ''}`}
+              onClick={() => setActiveTabId(tab.id)}
+              title={tab.type === 'file' ? (tab as FileTab).path : 'Claude Chat'}
+              role="tab"
+            >
+              <span className={styles.tabLabel}>
+                {tabIcon(tab)}&nbsp;{tabLabel(tab)}
+              </span>
+              {tab.type === 'file' && (tab as FileTab).dirty && (
+                <span className={styles.tabDirty} title="Unsaved changes">
+                  ●
+                </span>
+              )}
+              {tab.type === 'file' && (
+                <button
+                  className={styles.tabClose}
+                  onClick={(e) => closeTab(tab.id, e)}
+                  title="Close"
+                  aria-label="Close tab"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className={styles.tabContent}>
+          {/* Chat tab — keep mounted, hide when inactive */}
+          <div style={{ display: activeTab?.type === 'chat' ? 'contents' : 'none' }}>
+            <ChatPanel
+              projectPath={activeProject.path}
+              projectName={activeProject.name}
+              onFileChange={triggerReload}
+              pendingAttach={pendingAttach}
+              onAttachConsumed={() => setPendingAttach(null)}
+              dropZoneRef={dropZoneRef}
+              isDragOver={isDragOver}
+            />
+          </div>
+
+          {/* File editor tabs — each mounts on first activation, stays alive */}
+          {tabs
+            .filter((t): t is FileTab => t.type === 'file')
+            .map((tab) => (
+              <div key={tab.id} style={{ display: activeTabId === tab.id ? 'contents' : 'none' }}>
+                <FileEditor
+                  path={tab.path}
+                  onDirtyChange={(dirty) => setTabDirty(tab.id, dirty)}
+                  onSaved={triggerReload}
+                />
+              </div>
+            ))}
+        </div>
       </div>
 
       {/* Floating drag ghost — follows cursor while dragging */}
