@@ -186,9 +186,9 @@ export default function FileEditor({ path, onDirtyChange, onSaved }: FileEditorP
           onChange={handleEditorChange}
           onMount={handleEditorMount}
           options={{
-            fontSize: 13,
+            fontSize: 11,
             fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
-            lineHeight: 20,
+            lineHeight: 18,
             tabSize: 2,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
