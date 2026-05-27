@@ -1,5 +1,6 @@
 mod commands;
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
@@ -10,6 +11,15 @@ pub struct EngineState {
 
 pub struct HarnessChatState {
     pub pid: Mutex<Option<u32>>,
+}
+
+pub struct TerminalSession {
+    pub writer: Box<dyn std::io::Write + Send>,
+    pub master: Box<dyn portable_pty::MasterPty + Send>,
+}
+
+pub struct TerminalState {
+    pub sessions: Mutex<HashMap<String, TerminalSession>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,9 +35,26 @@ pub fn run() {
         .manage(HarnessChatState {
             pid: Mutex::new(None),
         })
+        .manage(TerminalState {
+            sessions: Mutex::new(HashMap::new()),
+        })
         .setup(|app| {
             #[cfg(debug_assertions)]
             app.get_webview_window("main").unwrap().open_devtools();
+
+            // Kill all PTY sessions when the main window closes
+            if let Some(window) = app.get_webview_window("main") {
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        if let Some(state) = app_handle.try_state::<TerminalState>() {
+                            if let Ok(mut sessions) = state.sessions.lock() {
+                                sessions.clear();
+                            }
+                        }
+                    }
+                });
+            }
 
             let handle = app.handle().clone();
             let sidecar = app.shell().sidecar("loom-engine")?;
@@ -103,6 +130,10 @@ pub fn run() {
             commands::cqc_run_text_check,
             commands::cqc_run_image_check,
             commands::cqc_list_log,
+            commands::create_terminal,
+            commands::write_to_terminal,
+            commands::resize_terminal,
+            commands::kill_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -22,7 +22,9 @@ function GitControls() {
   const [pullDiverged, setPullDiverged] = useState(false)
   const [passphrase, setPassphrase] = useState('')
   const [unlocking, setUnlocking] = useState(false)
+  const [branchSearch, setBranchSearch] = useState('')
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   // Load git status + remote info when project changes.
   useEffect(() => {
@@ -42,7 +44,12 @@ function GitControls() {
 
   // Close dropdown on outside click.
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setBranchSearch('')
+      return
+    }
+    // Auto-focus search when dropdown opens
+    setTimeout(() => searchRef.current?.focus(), 50)
     function onMouseDown(e: MouseEvent) {
       if (!wrapperRef.current?.contains(e.target as Node)) {
         setOpen(false)
@@ -75,6 +82,10 @@ function GitControls() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!activeProject) return null
+
+  const filteredBranches = branchSearch.trim()
+    ? gitBranches.filter((b) => b.toLowerCase().includes(branchSearch.trim().toLowerCase()))
+    : gitBranches
 
   const remoteLabel = gitRemoteUrl
     ? gitRemoteUrl
@@ -316,18 +327,49 @@ function GitControls() {
 
           <div className={styles.divider} />
 
-          {/* Branch list */}
-          <div className={styles.branchList}>
-            {gitBranches.map((b) => (
-              <button
-                key={b}
-                className={`${styles.branchItem} ${b === gitBranch ? styles.activeBranch : ''}`}
-                onClick={() => handleCheckout(b)}
-              >
-                <span className={styles.check}>{b === gitBranch ? '✓' : ''}</span>
-                <span>{b}</span>
+          {/* Branch search + list */}
+          <div className={styles.branchSearchWrap}>
+            <span className={styles.branchSearchIcon}>⎇</span>
+            <input
+              ref={searchRef}
+              className={styles.branchSearchInput}
+              type="text"
+              placeholder="Search branches…"
+              value={branchSearch}
+              onChange={(e) => setBranchSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  if (branchSearch) setBranchSearch('')
+                  else setOpen(false)
+                }
+                // Enter checks out the first filtered match
+                if (e.key === 'Enter') {
+                  const match = filteredBranches[0]
+                  if (match) handleCheckout(match)
+                }
+              }}
+            />
+            {branchSearch && (
+              <button className={styles.branchSearchClear} onClick={() => setBranchSearch('')}>
+                ✕
               </button>
-            ))}
+            )}
+          </div>
+          <div className={styles.branchList}>
+            {filteredBranches.length === 0 ? (
+              <div className={styles.branchNoMatch}>No branches match "{branchSearch}"</div>
+            ) : (
+              filteredBranches.map((b) => (
+                <button
+                  key={b}
+                  className={`${styles.branchItem} ${b === gitBranch ? styles.activeBranch : ''}`}
+                  onClick={() => handleCheckout(b)}
+                >
+                  <span className={styles.check}>{b === gitBranch ? '✓' : ''}</span>
+                  <span>{b}</span>
+                </button>
+              ))
+            )}
           </div>
 
           {/* New branch */}

@@ -193,3 +193,13 @@ export const onAuditError = (
 export const onAuditReportReady = (
   cb: (payload: { sessionId: string; reportPath: string }) => void
 ) => listen<{ sessionId: string; reportPath: string }>('audit_report_ready', (e) => cb(e.payload))
+
+// ─── Terminal events ──────────────────────────────────────────────────────────
+
+export const onTerminalOutput = (cb: (id: string, data: string) => void) =>
+  listen<{ id: string; data: string }>('terminal_output', (e) => cb(e.payload.id, e.payload.data))
+
+export const onTerminalExit = (cb: (id: string, code: number | null) => void) =>
+  listen<{ id: string; code: number | null }>('terminal_exit', (e) =>
+    cb(e.payload.id, e.payload.code)
+  )

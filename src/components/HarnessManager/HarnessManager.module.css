@@ -40,3 +40,35 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+
+/* ── Drag ghost ─────────────────────────────────── */
+
+.dragGhost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-width: 220px;
+  opacity: 0.92;
+}
+
+.dragGhostIcon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.dragGhostName {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -43,9 +43,20 @@ interface TreeNodeProps {
   onToggle: (path: string) => void
   onFileClick: (path: string) => void
   rootMissing: number
+  onAttachFile?: (path: string) => void
+  onFileDragStart?: (path: string, e: React.MouseEvent) => void
 }
 
-function TreeNode({ node, depth, expanded, onToggle, onFileClick, rootMissing }: TreeNodeProps) {
+function TreeNode({
+  node,
+  depth,
+  expanded,
+  onToggle,
+  onFileClick,
+  rootMissing,
+  onAttachFile,
+  onFileDragStart,
+}: TreeNodeProps) {
   const isExpanded = expanded.has(node.path)
   const indent = depth * 12
 
@@ -77,6 +88,8 @@ function TreeNode({ node, depth, expanded, onToggle, onFileClick, rootMissing }:
               onToggle={onToggle}
               onFileClick={onFileClick}
               rootMissing={0}
+              onAttachFile={onAttachFile}
+              onFileDragStart={onFileDragStart}
             />
           ))}
       </div>
@@ -88,9 +101,23 @@ function TreeNode({ node, depth, expanded, onToggle, onFileClick, rootMissing }:
       className={styles.row}
       style={{ paddingLeft: 8 + indent + 16 }}
       onClick={() => onFileClick(node.path)}
+      onMouseDown={(e) => onFileDragStart?.(node.path, e)}
+      title={`${node.path}\nDrag to chat to attach`}
     >
       <span className={styles.fileIcon}>{fileIcon(node)}</span>
       <span className={styles.name}>{node.name}</span>
+      {onAttachFile && (
+        <button
+          className={styles.attachHint}
+          title="Attach to chat"
+          onClick={(e) => {
+            e.stopPropagation()
+            onAttachFile(node.path)
+          }}
+        >
+          ⊕
+        </button>
+      )}
     </button>
   )
 }
@@ -99,9 +126,10 @@ interface Props {
   projectPath: string
   reloadKey?: number
   onAttachFile?: (path: string) => void
+  onFileDragStart?: (path: string, e: React.MouseEvent) => void
 }
 
-function FileExplorer({ projectPath, reloadKey, onAttachFile }: Props) {
+function FileExplorer({ projectPath, reloadKey, onAttachFile, onFileDragStart }: Props) {
   const [tree, setTree] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -164,6 +192,8 @@ function FileExplorer({ projectPath, reloadKey, onAttachFile }: Props) {
             onToggle={toggleExpanded}
             onFileClick={setModalPath}
             rootMissing={missingCount}
+            onAttachFile={onAttachFile}
+            onFileDragStart={onFileDragStart}
           />
         )}
       </div>

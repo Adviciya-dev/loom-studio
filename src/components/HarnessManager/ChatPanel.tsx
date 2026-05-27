@@ -81,6 +81,8 @@ interface Props {
   onFileChange?: () => void
   pendingAttach?: string | null
   onAttachConsumed?: () => void
+  dropZoneRef?: React.RefObject<HTMLDivElement>
+  isDragOver?: boolean
 }
 
 function ts() {
@@ -237,6 +239,8 @@ function ChatPanel({
   onFileChange,
   pendingAttach,
   onAttachConsumed,
+  dropZoneRef,
+  isDragOver = false,
 }: Props) {
   const { state, dispatch } = useApp()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -714,8 +718,17 @@ function ChatPanel({
             </button>
           </div>
 
-          {/* Unified input card */}
-          <div className={styles.inputCard}>
+          {/* Unified input card — drop zone managed by HarnessManager */}
+          <div
+            ref={dropZoneRef}
+            className={`${styles.inputCard} ${isDragOver ? styles.inputCardDragOver : ''}`}
+          >
+            {isDragOver && (
+              <div className={styles.dropOverlay}>
+                <span className={styles.dropOverlayIcon}>⊕</span>
+                <span className={styles.dropOverlayText}>Drop to attach file</span>
+              </div>
+            )}
             <div
               className={styles.inputResizeHandle}
               onMouseDown={onInputResizeMouseDown}
@@ -725,7 +738,7 @@ function ChatPanel({
               ref={textareaRef}
               className={styles.textarea}
               style={{ height: inputHeight, maxHeight: inputHeight }}
-              placeholder="Ask Claude anything…"
+              placeholder="Ask Claude anything… or drag a file from the explorer"
               value={input}
               onChange={onInputChange}
               onKeyDown={onKeyDown}

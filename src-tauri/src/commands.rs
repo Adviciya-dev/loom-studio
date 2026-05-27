@@ -1090,3 +1090,201 @@ pub fn cqc_list_log(
         "limit": limit.unwrap_or(100)
     }))
 }
+
+// ─── Interactive Terminal ─────────────────────────────────────────────────────
+
+/// Detect the best interactive shell for the current platform.
+fn detect_shell() -> String {
+    #[cfg(windows)]
+    {
+        for candidate in &["powershell.exe", "cmd.exe"] {
+            if std::process::Command::new("where")
+                .arg(candidate)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return candidate.to_string();
+            }
+        }
+        "cmd.exe".into()
+    }
+    #[cfg(not(windows))]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_default();
+        if !shell.is_empty() && std::path::Path::new(&shell).exists() {
+            return shell;
+        }
+        for s in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
+            if std::path::Path::new(s).exists() {
+                return s.to_string();
+            }
+        }
+        "/bin/sh".into()
+    }
+}
+
+/// Spawn a real PTY shell and stream its output to the frontend as base64-encoded
+/// `terminal_output` events.
+#[tauri::command]
+pub async fn create_terminal(
+    state: tauri::State<'_, crate::TerminalState>,
+    app: tauri::AppHandle,
+    id: String,
+    cwd: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    use base64::Engine as _;
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use tauri::Emitter;
+
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let shell = detect_shell();
+    let mut cmd = CommandBuilder::new(&shell);
+
+    // Set working directory
+    if let Some(ref dir) = cwd {
+        cmd.cwd(dir);
+    }
+
+    // Shell flags for interactive / login on Unix
+    #[cfg(not(windows))]
+    {
+        let shell_name = std::path::Path::new(&shell)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("sh");
+        match shell_name {
+            "zsh" => {
+                cmd.arg("-i");
+                cmd.arg("-l");
+            }
+            "bash" => {
+                cmd.arg("-i");
+                cmd.arg("-l");
+            }
+            _ => {
+                cmd.arg("-i");
+            }
+        }
+    }
+
+    // Environment
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("PATH", expanded_path());
+
+    // Spawn into the slave side of the PTY
+    let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+
+    // Writer goes into the session; reader runs in a background task
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+
+    let term_id = id.clone();
+    let app_handle = app.clone();
+
+    // Background reader task — streams PTY output to the frontend
+    std::thread::spawn(move || {
+        use tauri::Manager;
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => {
+                    let _ = app_handle.emit(
+                        "terminal_exit",
+                        serde_json::json!({ "id": term_id, "code": null }),
+                    );
+                    if let Some(state) = app_handle.try_state::<crate::TerminalState>() {
+                        if let Ok(mut sessions) = state.sessions.lock() {
+                            sessions.remove(&term_id);
+                        }
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                    let _ = app_handle.emit(
+                        "terminal_output",
+                        serde_json::json!({ "id": term_id, "data": encoded }),
+                    );
+                }
+            }
+        }
+    });
+
+    // Store session
+    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    sessions.insert(
+        id,
+        crate::TerminalSession {
+            writer,
+            master: pair.master,
+        },
+    );
+
+    Ok(())
+}
+
+/// Forward raw keystroke / paste data from xterm.js to the PTY stdin.
+#[tauri::command]
+pub fn write_to_terminal(
+    state: tauri::State<'_, crate::TerminalState>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get_mut(&id)
+        .ok_or_else(|| format!("Terminal session '{}' not found", id))?;
+    session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    session.writer.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Notify the PTY of new terminal dimensions (for programs like vim / htop).
+#[tauri::command]
+pub fn resize_terminal(
+    state: tauri::State<'_, crate::TerminalState>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    use portable_pty::PtySize;
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get(&id)
+        .ok_or_else(|| format!("Terminal session '{}' not found", id))?;
+    session
+        .master
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Kill the shell and remove its session from state.
+#[tauri::command]
+pub fn kill_terminal(
+    state: tauri::State<'_, crate::TerminalState>,
+    id: String,
+) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    sessions.remove(&id);
+    Ok(())
+}

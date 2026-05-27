@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useApp } from '@/context/AppContext'
 import { onLogLine, onEngineStatus } from '@/lib/events'
 import type { LogLine } from '@/types'
+import Terminal from './Terminal'
 import styles from './LogPanel.module.css'
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -215,6 +216,12 @@ function LogPanel() {
   const isRunning = engineStatus === 'running'
   const virtualize = logLines.length > VIRT_THRESHOLD
 
+  // Tab state
+  type PanelTab = 'output' | 'terminal'
+  const [activeTab, setActiveTab] = useState<PanelTab>('output')
+  const [terminalMounted, setTerminalMounted] = useState(false)
+  const [terminalId] = useState(() => crypto.randomUUID())
+
   useEffect(() => {
     if (autoScroll && open && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight
@@ -306,16 +313,37 @@ function LogPanel() {
       {open && <div className={styles.resizeHandle} onMouseDown={startResize} />}
 
       <div className={styles.header}>
-        <button className={styles.tabBtn} onClick={() => setOpen((o) => !o)}>
-          <span className={styles.tabLabel}>OUTPUT</span>
-          {isRunning && <span className={styles.liveDot} aria-label="running" />}
-          {logLines.length > 0 && (
-            <span className={styles.lineCount}>{logLines.length.toLocaleString()}</span>
-          )}
-        </button>
+        {/* Tab buttons */}
+        <div className={styles.tabs}>
+          <button
+            className={[styles.tabBtn, activeTab === 'output' ? styles.tabActive : ''].join(' ')}
+            onClick={() => {
+              setActiveTab('output')
+              setOpen(true)
+            }}
+          >
+            <span className={styles.tabLabel}>OUTPUT</span>
+            {isRunning && activeTab === 'output' && (
+              <span className={styles.liveDot} aria-label="running" />
+            )}
+            {logLines.length > 0 && activeTab === 'output' && (
+              <span className={styles.lineCount}>{logLines.length.toLocaleString()}</span>
+            )}
+          </button>
+          <button
+            className={[styles.tabBtn, activeTab === 'terminal' ? styles.tabActive : ''].join(' ')}
+            onClick={() => {
+              setActiveTab('terminal')
+              setTerminalMounted(true)
+              setOpen(true)
+            }}
+          >
+            <span className={styles.tabLabel}>TERMINAL</span>
+          </button>
+        </div>
 
         <div className={styles.headerActions}>
-          {conflictFiles.length > 0 && (
+          {activeTab === 'output' && conflictFiles.length > 0 && (
             <button
               className={styles.conflictBtn}
               onClick={() =>
@@ -326,7 +354,7 @@ function LogPanel() {
               ⚠ {conflictFiles.length} conflict{conflictFiles.length > 1 ? 's' : ''}
             </button>
           )}
-          {!autoScroll && open && logLines.length > 0 && (
+          {activeTab === 'output' && !autoScroll && open && logLines.length > 0 && (
             <button
               className={styles.scrollBtn}
               onClick={() => {
@@ -337,7 +365,7 @@ function LogPanel() {
               ↓ latest
             </button>
           )}
-          {logLines.length > 0 && (
+          {activeTab === 'output' && logLines.length > 0 && (
             <button
               className={styles.clearBtn}
               onClick={() => {
@@ -359,8 +387,14 @@ function LogPanel() {
         </div>
       </div>
 
+      {/* OUTPUT body */}
       {open && (
-        <div className={styles.body} ref={bodyRef} onScroll={handleScroll}>
+        <div
+          className={styles.body}
+          ref={bodyRef}
+          onScroll={handleScroll}
+          style={{ display: activeTab === 'output' ? undefined : 'none' }}
+        >
           {logLines.length === 0 && isRunning ? (
             <ThinkingIndicator />
           ) : logLines.length === 0 ? (
@@ -374,6 +408,17 @@ function LogPanel() {
               {isRunning && <ThinkingIndicator />}
             </>
           )}
+        </div>
+      )}
+
+      {/* TERMINAL body — lazy-mounted, kept alive with display:none on tab switch */}
+      {open && terminalMounted && (
+        <div style={{ display: activeTab === 'terminal' ? undefined : 'none' }}>
+          <Terminal
+            id={terminalId}
+            cwd={state.activeProject?.path}
+            height={panelHeight - HEADER_H}
+          />
         </div>
       )}
     </div>

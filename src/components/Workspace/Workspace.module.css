@@ -46,7 +46,7 @@
 }
 
 .divider {
-  width: 4px;
+  width: 3px;
   background: var(--border-subtle);
   cursor: col-resize;
   flex-shrink: 0;
@@ -116,7 +116,7 @@
 
 .tabBtnActive .tabCount {
   background: var(--accent-subtle);
-  border-color: rgba(124, 108, 252, 0.3);
+  border-color: rgba(91, 124, 246, 0.3);
   color: var(--accent);
 }
 
@@ -201,7 +201,7 @@
 .chipActive {
   color: var(--accent);
   background: var(--accent-subtle);
-  border-color: rgba(124, 108, 252, 0.4);
+  border-color: rgba(91, 124, 246, 0.4);
 }
 
 /* ── Search bar ───────────────────────────────────── */
@@ -386,7 +386,7 @@
 
 .listItemActive {
   background: var(--accent-subtle);
-  border-color: rgba(124, 108, 252, 0.2);
+  border-color: rgba(91, 124, 246, 0.2);
 }
 .listItemActive:hover {
   background: var(--accent-subtle);
@@ -406,7 +406,7 @@
   opacity: 0.35;
 }
 .dotRunning {
-  background: #4d9cf6;
+  background: var(--accent);
 }
 .dotDone {
   background: #4ade80;
@@ -446,14 +446,14 @@
   border: 1px solid var(--border);
 }
 .pill_in-progress {
-  color: #4d9cf6;
-  background: rgba(77, 156, 246, 0.1);
-  border: 1px solid rgba(77, 156, 246, 0.3);
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border: 1px solid rgba(91, 124, 246, 0.3);
 }
 .pill_completed {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.08);
-  border: 1px solid rgba(74, 222, 128, 0.25);
+  color: #30d158;
+  background: rgba(48, 209, 88, 0.08);
+  border: 1px solid rgba(48, 209, 88, 0.25);
 }
 
 /* ── Right panel ──────────────────────────────────── */
@@ -674,10 +674,10 @@
   flex-shrink: 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: #4d9cf6;
+  color: var(--accent);
   padding: 5px 12px;
-  background: rgba(77, 156, 246, 0.1);
-  border: 1px solid rgba(77, 156, 246, 0.3);
+  background: var(--accent-subtle);
+  border: 1px solid rgba(91, 124, 246, 0.3);
   border-radius: var(--radius-md);
 }
 
@@ -696,10 +696,10 @@
   flex-shrink: 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: #10b981;
+  color: #30d158;
   padding: 5px 12px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(48, 209, 88, 0.1);
+  border: 1px solid rgba(48, 209, 88, 0.3);
   border-radius: var(--radius-md);
 }
 

@@ -16,7 +16,9 @@ function Sidebar() {
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.logo}>L</div>
+      <div className={styles.logo}>
+        <div className={styles.logoMark}>L</div>
+      </div>
       <nav className={styles.nav}>
         <button
           className={`${styles.navItem} ${appMode === 'run' ? styles.active : ''}`}

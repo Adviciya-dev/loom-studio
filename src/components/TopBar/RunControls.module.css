@@ -1,64 +1,80 @@
+/* ── Run button ───────────────────────────────────── */
+
 .runBtn {
-  padding: var(--space-xs) var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: #fff;
-  background-color: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
   border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgba(91, 124, 246, 0.35);
   transition:
-    background-color 0.15s,
-    opacity 0.15s;
+    opacity 0.15s,
+    box-shadow 0.15s;
 }
 
 .runBtn:hover:not(:disabled) {
-  background-color: var(--accent-hover);
+  opacity: 0.9;
+  box-shadow: 0 4px 14px rgba(91, 124, 246, 0.45);
 }
 
 .runBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Pause/Stop group ─────────────────────────────── */
+
+.group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
 }
 
 .pauseBtn {
-  padding: var(--space-xs) var(--space-md);
+  padding: 6px 12px;
   font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--text-secondary);
   background-color: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  transition: background-color 0.15s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .pauseBtn:hover {
   background-color: var(--bg-hover);
-}
-
-.group {
-  display: flex;
-  gap: var(--space-xs);
+  color: var(--text-primary);
 }
 
 .stopBtn {
-  padding: var(--space-xs) var(--space-md);
+  padding: 6px 12px;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: #fff;
   background-color: #ef4444;
   border-radius: var(--radius-md);
-  transition: background-color 0.15s;
+  transition: background 0.12s;
 }
 
 .stopBtn:hover {
   background-color: #dc2626;
 }
 
+/* ── Status badges ────────────────────────────────── */
+
 .completedLabel {
-  padding: var(--space-xs) var(--space-md);
+  padding: 5px 12px;
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: #10b981;
-  background-color: rgba(16, 185, 129, 0.1);
+  color: #30d158;
+  background-color: rgba(48, 209, 88, 0.1);
   border-radius: var(--radius-md);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid rgba(48, 209, 88, 0.25);
 }

@@ -84,6 +84,43 @@
   color: var(--text-primary);
 }
 
+/* File rows support custom drag (via mousedown) */
+.row:not(:has(.chevron)):active {
+  opacity: 0.6;
+}
+
+/* ⊕ attach button — only visible on hover */
+.attachHint {
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0;
+  margin-left: 2px;
+  transition:
+    opacity 0.1s,
+    background 0.1s;
+}
+
+.row:hover .attachHint {
+  display: flex;
+}
+
+.attachHint:hover {
+  opacity: 1;
+  background: var(--accent-subtle);
+}
+
 .chevron {
   font-size: 10px;
   color: var(--text-muted);

@@ -2,20 +2,20 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: var(--bottombar-height);
   padding: 0 var(--space-md);
-  background-color: #0a0a0c;
+  background-color: var(--bg-surface);
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .chevron {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--accent);
   font-family: var(--font-mono);
   flex-shrink: 0;
   user-select: none;
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 .input {
@@ -59,7 +59,6 @@
 .attachBtn:hover:not(:disabled) {
   opacity: 1;
 }
-
 .attachBtn:disabled {
   opacity: 0.25;
   cursor: not-allowed;
@@ -67,6 +66,9 @@
 
 .sendBtn {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
   font-family: var(--font-mono);
   color: var(--accent);
@@ -74,7 +76,7 @@
   border: none;
   padding: 0 4px;
   cursor: pointer;
-  opacity: 0.8;
+  opacity: 0.75;
   transition: opacity 0.15s;
   line-height: 1;
 }
@@ -83,7 +85,6 @@
   opacity: 0.3;
   cursor: not-allowed;
 }
-
 .sendBtn:not(:disabled):hover {
   opacity: 1;
 }
