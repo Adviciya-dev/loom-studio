@@ -575,7 +575,7 @@ function ChatPanel({
 
   return (
     <>
-      <div className={styles.panel}>
+      <div className={`${styles.panel} ${compact ? styles.panelCompact : ''}`}>
         {!compact && (
           <div className={styles.header}>
             <span className={styles.title}>Claude Chat</span>

@@ -1038,3 +1038,46 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── Compact mode (FloatingChat overlay) ───────── */
+
+.panelCompact .inputSection {
+  padding: 0 8px 6px;
+}
+
+.panelCompact .inputToolbar {
+  padding: 4px 6px 5px;
+  gap: 2px;
+}
+
+.panelCompact .stopBtn {
+  padding: 3px 8px;
+  font-size: 10px;
+  gap: 4px;
+  border-radius: 6px;
+}
+
+.panelCompact .sendBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.panelCompact .toolbarBtn {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.panelCompact .inputHint {
+  display: none;
+}
+
+.panelCompact .textarea {
+  padding: 8px 10px 4px;
+  font-size: var(--font-size-sm);
+}
+
+.panelCompact .messages {
+  padding: 10px 12px;
+  gap: 10px;
+}
