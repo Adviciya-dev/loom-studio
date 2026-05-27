@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Paperclip, ArrowUp, Square, ChevronDown } from 'lucide-react'
 import { onHarnessLogLine, onHarnessDone, onEngineError, onTemplates } from '@/lib/events'
@@ -254,6 +254,15 @@ function ChatPanel({
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   const [showTemplates, setShowTemplates] = useState(false)
   const tplDropRef = useRef<HTMLDivElement>(null)
+  const tplBtnRef = useRef<HTMLButtonElement>(null)
+  const [tplDropPos, setTplDropPos] = useState<{ left: number; bottom: number } | null>(null)
+
+  // Position the dropdown in fixed coords so it escapes inputCard's overflow:hidden
+  useLayoutEffect(() => {
+    if (!showTemplates || !tplBtnRef.current) return
+    const r = tplBtnRef.current.getBoundingClientRect()
+    setTplDropPos({ left: r.left, bottom: window.innerHeight - r.top + 4 })
+  }, [showTemplates])
 
   // Rich streaming state: typed blocks instead of a single string
   const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([])
@@ -720,9 +729,10 @@ function ChatPanel({
                   <span>Attach</span>
                 </button>
 
-                {/* Templates dropdown */}
+                {/* Templates dropdown — fixed-position to escape inputCard's overflow:hidden */}
                 <div className={styles.tplDropWrap} ref={tplDropRef}>
                   <button
+                    ref={tplBtnRef}
                     className={`${styles.toolbarBtn} ${showTemplates ? styles.toolbarBtnActive : ''}`}
                     onClick={() => setShowTemplates((v) => !v)}
                     disabled={sending}
@@ -735,8 +745,15 @@ function ChatPanel({
                       style={{ marginLeft: 2, opacity: 0.6 }}
                     />
                   </button>
-                  {showTemplates && (
-                    <div className={styles.tplDropdown}>
+                  {showTemplates && tplDropPos && (
+                    <div
+                      className={styles.tplDropdown}
+                      style={{
+                        position: 'fixed',
+                        left: tplDropPos.left,
+                        bottom: tplDropPos.bottom,
+                      }}
+                    >
                       {defaultActions.map((qa) => (
                         <button
                           key={qa.id}
