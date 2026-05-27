@@ -252,6 +252,8 @@ function ChatPanel({
   const [newTplLabel, setNewTplLabel] = useState('')
   const [newTplPrompt, setNewTplPrompt] = useState('')
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const tplDropRef = useRef<HTMLDivElement>(null)
 
   // Rich streaming state: typed blocks instead of a single string
   const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([])
@@ -293,6 +295,18 @@ function ChatPanel({
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
   }, [messages, streamBlocks])
+
+  // Close templates dropdown when clicking outside
+  useEffect(() => {
+    if (!showTemplates) return
+    function onDown(e: MouseEvent) {
+      if (tplDropRef.current && !tplDropRef.current.contains(e.target as Node)) {
+        setShowTemplates(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showTemplates])
 
   // Live elapsed timer — updates every 100ms while Claude is working
   useEffect(() => {
@@ -476,6 +490,12 @@ function ChatPanel({
     },
     [messages, sending, projectPath, model]
   )
+
+  function insertTemplate(prompt: string) {
+    setInput((prev) => (prev.trim() ? prev.trimEnd() + '\n\n' + prompt : prompt))
+    setShowTemplates(false)
+    textareaRef.current?.focus()
+  }
 
   async function handleAttach() {
     const path = await invoke<string | null>('open_file_picker').catch(() => null)
@@ -662,63 +682,6 @@ function ChatPanel({
             </div>
           )}
 
-          {/* Quick actions — horizontal scroll, no wrap */}
-          <div className={styles.quickActions}>
-            {defaultActions.map((qa) => (
-              <button
-                key={qa.id}
-                className={styles.quickBtn}
-                onClick={() =>
-                  setInput((prev) =>
-                    prev.trim() ? prev.trimEnd() + '\n\n' + qa.prompt : qa.prompt
-                  )
-                }
-                disabled={sending}
-              >
-                {qa.label}
-              </button>
-            ))}
-            {state.customTemplates.map((t) => (
-              <div key={t.id} className={styles.customTplChip}>
-                <button
-                  className={styles.quickBtn}
-                  onClick={() =>
-                    setInput((prev) =>
-                      prev.trim() ? prev.trimEnd() + '\n\n' + t.prompt : t.prompt
-                    )
-                  }
-                  disabled={sending}
-                >
-                  {t.label}
-                </button>
-                <div className={styles.chipActions}>
-                  <button
-                    className={styles.chipActionBtn}
-                    onClick={() => openEditTemplate(t)}
-                    title="Edit"
-                  >
-                    ✏
-                  </button>
-                  <button
-                    className={styles.chipActionBtn}
-                    onClick={() => handleDeleteTemplate(t.id)}
-                    title="Delete"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            ))}
-            <button
-              className={styles.addTemplateBtn}
-              onClick={openAddTemplate}
-              title="Add template"
-              disabled={sending}
-            >
-              +
-            </button>
-          </div>
-
           {/* Unified input card — drop zone managed by HarnessManager */}
           <div
             ref={dropZoneRef}
@@ -756,6 +719,75 @@ function ChatPanel({
                   <Paperclip size={13} strokeWidth={2} />
                   <span>Attach</span>
                 </button>
+
+                {/* Templates dropdown */}
+                <div className={styles.tplDropWrap} ref={tplDropRef}>
+                  <button
+                    className={`${styles.toolbarBtn} ${showTemplates ? styles.toolbarBtnActive : ''}`}
+                    onClick={() => setShowTemplates((v) => !v)}
+                    disabled={sending}
+                    title="Templates"
+                  >
+                    <span>Templates</span>
+                    <ChevronDown
+                      size={10}
+                      strokeWidth={2.5}
+                      style={{ marginLeft: 2, opacity: 0.6 }}
+                    />
+                  </button>
+                  {showTemplates && (
+                    <div className={styles.tplDropdown}>
+                      {defaultActions.map((qa) => (
+                        <button
+                          key={qa.id}
+                          className={styles.tplItem}
+                          onClick={() => insertTemplate(qa.prompt)}
+                        >
+                          {qa.label}
+                        </button>
+                      ))}
+                      {state.customTemplates.length > 0 && <div className={styles.tplDivider} />}
+                      {state.customTemplates.map((t) => (
+                        <div key={t.id} className={styles.tplItemRow}>
+                          <button
+                            className={styles.tplItem}
+                            onClick={() => insertTemplate(t.prompt)}
+                          >
+                            {t.label}
+                          </button>
+                          <button
+                            className={styles.tplRowAction}
+                            onClick={() => {
+                              openEditTemplate(t)
+                              setShowTemplates(false)
+                            }}
+                            title="Edit"
+                          >
+                            ✏
+                          </button>
+                          <button
+                            className={styles.tplRowAction}
+                            onClick={() => handleDeleteTemplate(t.id)}
+                            title="Delete"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <div className={styles.tplDivider} />
+                      <button
+                        className={styles.tplNewBtn}
+                        onClick={() => {
+                          openAddTemplate()
+                          setShowTemplates(false)
+                        }}
+                      >
+                        + New template
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className={styles.modelSelectWrap}>
                   <select
                     className={styles.modelSelect}
