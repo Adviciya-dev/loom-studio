@@ -13,207 +13,461 @@ The PRD should include:
 Follow the format used in professional product teams. Write the full file content and create it using the write tool.`
 
 export const ARCHITECTURE_PROMPT = (projectName: string) =>
-  `Generate a system architecture document for "${projectName}" and save it as \`harness/architecture.md\`.
+  `You are helping design the system architecture for "${projectName}".
 
-The document should include:
-- System overview and high-level architecture diagram (ASCII)
-- Technology stack with reasoning
-- Module/component breakdown
-- Data flow and API contracts
-- Database schema overview
-- Key design decisions and trade-offs
-- Scalability and deployment considerations
+### Step 1 — Read context
+Read \`harness/prd.md\` in full before doing anything else. Understand the product goals, features, target users, and success metrics.
 
-Write the complete file content and create it using the write tool.`
+### Step 2 — Ask questions one by one
+Based on what you read in the PRD, ask the human ONE question at a time to fill in architectural decisions that cannot be inferred from the PRD alone.
+
+Cover these areas in order, but skip any that the PRD already answers clearly:
+1. **Tech stack** — frontend framework, backend language/framework, database
+2. **Infrastructure** — where will this be hosted? (cloud provider, self-hosted, serverless, etc.)
+3. **Auth strategy** — how will users authenticate? (JWT, sessions, OAuth, SSO, etc.) what roles exist?
+4. **Deployment model** — how many environments? CI/CD pipeline? containerised or bare metal?
+5. **Key constraints** — any hard rules the architecture must follow? (e.g. GDPR, no third-party auth, must use existing infra)
+6. **Module boundaries** — confirm the feature modules implied by the PRD, ask if any should be merged, split, or excluded
+
+Ask each question clearly, one at a time. Wait for the answer before asking the next. If the human says "you decide" or "up to you" for a question, make a reasonable choice based on the PRD context and state what you chose and why before moving on.
+
+### Step 3 — Confirm before generating
+Once all questions are answered, summarise the decisions in a short list and ask: "Ready to generate the architecture document with these decisions?"
+
+### Step 4 — Generate and save \`harness/architecture.md\`
+Only after confirmation, write the full document using this exact structure:
+
+\`\`\`markdown
+# Architecture: <Project Name>
+
+## System Overview
+One paragraph: what the system does, who uses it, and the high-level approach.
+
+## High-Level Architecture
+ASCII diagram showing all major components and how they connect (client, server, DB, external services, queues, etc.).
+
+\`\`\`
+[ASCII diagram here]
+\`\`\`
+
+## Tech Stack
+| Layer | Technology | Reasoning |
+|-------|-----------|-----------|
+| Frontend | ... | why chosen |
+| Backend | ... | why chosen |
+| Database | ... | why chosen |
+| Infrastructure | ... | why chosen |
+| Auth | ... | why chosen |
+
+## System Components
+For each major component/service:
+
+### <Component Name>
+- **Responsibility:** what this component owns
+- **Exposes:** APIs, events, or interfaces it provides to other components
+- **Depends on:** other components it calls or reads from
+- **Technology:** specific stack used
+
+## Auth Strategy
+- Authentication method
+- Token storage and refresh approach
+- Role and permission model (list roles and what each can do)
+- Protected vs. public routes/endpoints
+
+## Data Flow
+Step-by-step description of the primary data flows. Use numbered steps:
+1. Client sends X to Y
+2. Y validates and calls Z
+3. ...
+
+## Database Schema Overview
+For each major table or collection:
+- **Table name** — purpose, key columns, relationships
+
+## Module Breakdown
+List every feature module that will need to be built. This list feeds directly into module file generation.
+
+| Module | Description | Depends On |
+|--------|-------------|------------|
+| user-auth | ... | — |
+| ... | ... | ... |
+
+## Deployment Model
+- Hosting environment
+- Environments (local, staging, production)
+- CI/CD approach
+- Environment variables required (names only, no values)
+
+## Key Constraints & Non-Negotiables
+- Constraint 1: exact rule that must not be violated
+- Constraint 2: ...
+
+## Open Questions
+- Any architectural decisions not yet finalised that downstream work depends on
+\`\`\`
+
+### Rules
+- Every section is required. Write "TBD — <reason>" if something is not yet decided, never omit a section.
+- The Module Breakdown table is critical — it is the direct input to module file generation.
+- Tech stack choices must include reasoning.
+- Constraints must be specific and enforceable.
+
+Start now by reading \`harness/prd.md\`, then ask your first question.`
 
 export const FEATURE_PROMPT = (projectName: string) =>
-  `You are creating detailed, developer-ready feature briefs for "${projectName}".
+  `You are creating module spec files for "${projectName}". These are the human-reviewed source of truth that feed into LLD generation and task creation — keep them at the right level of detail: clear enough for a developer to understand scope, not so granular that they replace the LLD.
 
-Follow these steps in order:
+### Step 1 — Read context
+Read both \`harness/prd.md\` and \`harness/architecture.md\` in full before doing anything. If either is missing, say so and stop.
 
-1. **Create the features folder** — run \`mkdir -p harness/features\` if it doesn't exist.
+### Step 2 — Extract and confirm the module list
+From the two documents, identify every distinct feature module. Each top-level user-facing feature and major backend service becomes its own module file.
 
-2. **Read context** — read \`harness/prd.md\` and \`harness/architecture.md\`. If either is missing, proceed with what's available.
+Present the list to the human in this format and ask for confirmation:
 
-3. **Identify all modules** — extract every distinct feature or module. Each top-level user-facing module or major backend service becomes its own file.
+---
+**Modules identified from PRD + architecture:**
 
-4. **Create one file per module** at \`harness/features/<feature-name>.md\` (kebab-case). Each file must be LOW-LEVEL and developer-actionable — detailed enough that a developer can immediately start writing tasks without asking questions.
+| # | Module | Description | Depends On |
+|---|--------|-------------|------------|
+| 1 | user-auth | ... | — |
+| 2 | ... | ... | ... |
+
+Do you want to add, remove, rename, or split any modules before I proceed? Reply "looks good" to continue, or tell me the changes.
+---
+
+Wait for confirmation before moving on.
+
+### Step 3 — Ask scoping questions one by one
+Once the module list is confirmed, go through each module and ask ONE question at a time to clarify anything that cannot be determined from the PRD or architecture. Focus on:
+- **Dashboard** — does this module need an admin/dashboard view?
+- **Third-party** — does this module require any external services or APIs?
+- **Auth scope** — which roles can access this module and what can each role do?
+- **Edge cases** — any known constraints or tricky scenarios specific to this module?
+
+Only ask about things that are genuinely ambiguous — skip anything already answered in the docs. If the human says "you decide", make a reasonable choice, state it, and move on.
+
+### Step 4 — Confirm before generating
+Summarise what will be generated:
+- List of module files with their \`depends_on\` relationships
+- Which modules include a Dashboard section
+- Which modules include a Third-Party Integrations section
+
+Ask: "Ready to generate all module files?"
+
+### Step 5 — Generate and save all module files
+Only after confirmation, create \`harness/modules/\` and write one file per module at \`harness/modules/<module-name>.md\` (kebab-case).
 
 Each file must follow this exact structure:
 
 \`\`\`markdown
-# Feature: <Feature Name>
+# Module: <Module Name>
 
 ## Overview
-One paragraph: what this module does, who uses it, and why it exists.
-
-## User Stories
-- As a [user type], I want [goal], so that [benefit].
-
-## Screens / Pages
-For each screen in this module:
-
-### <Screen Name> (\`/route/path\`)
-**Purpose:** One sentence — what this screen does.
-**Components:**
-- \`ComponentName\` — what it renders, key props, behaviour on interaction
-**Fields / Inputs:**
-- \`fieldName\` (string | number | boolean) — validation rules, placeholder, required/optional
-**Actions:**
-- Button label → exact outcome (API call + endpoint, navigation path, state update)
-**States:**
-- loading — skeleton or spinner shown where?
-- empty — what text/illustration shown?
-- error — inline or toast? exact error message?
-- success — what changes in the UI?
-**Edge cases:**
-- What happens if the user has no data yet?
-- What happens if an action fails mid-way?
-
-## API Contracts
-List every endpoint this feature calls or exposes.
-
-### METHOD /api/v1/<resource>
-- **Auth:** Bearer JWT required / public
-- **Query params:** \`param\` (type) — what it filters/sorts
-- **Request body:**
-\`\`\`json
-{
-  "field": "string — max 255 chars, required",
-  "amount": "number — positive integer, required"
-}
-\`\`\`
-- **Response 200/201:**
-\`\`\`json
-{
-  "id": "uuid",
-  "field": "string"
-}
-\`\`\`
-- **Error responses:**
-  - 400 — validation failed, returns \`{ errors: [...] }\`
-  - 401 — missing or invalid token
-  - 404 — resource not found
-  - 409 — conflict (e.g. duplicate entry)
-
-## Data Models
-For each DB table or document this feature owns or modifies:
-
-\`\`\`
-Table: table_name
-- id: uuid, PK, auto-generated
-- field_name: varchar(255), NOT NULL — description
-- status: enum('active','inactive'), default 'active'
-- user_id: uuid, FK → users.id, ON DELETE CASCADE
-- created_at: timestamp, auto
-- updated_at: timestamp, auto
-\`\`\`
-Relationships: describe every FK join and what cascades.
-
-## Business Logic Rules
-Exact rules a developer must implement — no vague language:
-- Rule: "If [condition], then [exact action/response]"
-- Validation: "Field X must be [constraint] — return error code Y if violated"
-- Permissions: "Only [role] can [action] — return 403 otherwise"
-- Triggers: "When [event], automatically [side effect]"
-
-## State Management
-- Global atoms/store slices this feature reads or writes
-- Local component state that must persist across re-renders
-- Cache keys and when to invalidate them
-- Optimistic update strategy (if any)
-
-## Files to Create / Modify
-\`\`\`
-CREATE:
-- apps/<app>/src/pages/<feature>/index.tsx
-- apps/<app>/src/pages/<feature>/<Screen>.tsx
-- apps/<app>/src/components/<Feature>/<Component>.tsx
-- apps/<app>/src/hooks/use<Feature>.ts
-- apps/api/src/routes/<feature>.ts
-- apps/api/src/services/<Feature>Service.ts
-- apps/api/src/models/<Feature>.ts
-- packages/schemas/src/<feature>.ts     (Zod schemas shared FE + BE)
-- packages/types/src/<feature>.ts       (TypeScript interfaces)
-
-MODIFY:
-- apps/<app>/src/app/_layout.tsx        (add route)
-- apps/api/src/routes/index.ts          (register router)
-- packages/schemas/src/index.ts         (export new schemas)
-\`\`\`
-
-## Acceptance Criteria
-Each criterion must be specific and independently testable:
-- [ ] <Screen> renders <exact element> when <exact condition>
-- [ ] POST /api/v1/<resource> returns 201 with correct shape when all required fields provided
-- [ ] Form submit is disabled until all required fields are valid
-- [ ] Error toast appears within 300ms of a failed API call
-- [ ] Loading skeleton shown for exactly the duration of the API call
-- [ ] Empty state illustration shown when list returns 0 items
-
-## Edge Cases & Error Handling
-- **Empty state:** what renders when there is no data (text, illustration, CTA)
-- **Network error:** exact UI response on 500 or timeout
-- **Validation errors:** inline field errors vs. form-level errors
-- **Concurrent edits:** how conflicts are detected and resolved
-- **Large datasets:** pagination threshold, virtual scroll if needed
-- **Permission denied:** redirect path or inline error message
-- **Expired session:** redirect to login, preserve intended destination
+2–3 sentences: what this module does, who uses it, and why it exists. Include which roles interact with it.
 
 ## Dependencies
-- **Requires first:** list other features/modules that must exist before this can be built
-- **Blocks:** list features that cannot start until this is done
-- **Third-party:** libraries, SDKs, or external APIs (include version if critical)
+- **Requires:** list modules that must exist before this one can be built (or "none")
+- **Blocks:** list modules that cannot start until this one is done (or "none")
+
+## Database
+List every table this module owns or modifies:
+- **<table_name>** — purpose, key columns (name, type, nullable, default), relationships and cascade rules, indexes required, any migrations needed
+
+## Backend API
+For each endpoint:
+- **METHOD /path** — one-line description, auth role required
+  - Business logic rules (exact conditions and outcomes, no vague language)
+  - Error cases to handle (status code + condition)
+
+## Frontend
+- **Pages/routes** — list each page and its route path
+- **Components** — name and single-line responsibility for each
+- **State management** — what state this module owns, what triggers updates
+
+## Dashboard (if required)
+- Admin views needed and their purpose
+- Permissions model — who sees what, who can do what
+
+## Third-Party Integrations (if required)
+- Service name — why it's needed, which operations use it
+- Credentials/API keys required (name only, no values)
+
+## Acceptance Criteria
+Each criterion must be specific and independently testable. These directly become the QA checklist — write them precisely.
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] Criterion 3
 \`\`\`
 
-Create all feature files now in a single pass. Do not ask for confirmation.
-Be concrete and specific throughout — a developer reading a file must have zero ambiguity about what to build. Avoid vague phrases like "handle errors appropriately" or "show a loading state". Always specify exact behaviour.`
+### Rules
+- Save to \`harness/modules/\` — never \`harness/features/\` or any other folder.
+- Module files are intentionally higher level than LLD — do not include exact JSON schemas, component props, or file paths. That detail belongs in the LLD stage.
+- The Acceptance Criteria section is the single source of truth for QA — no duplication across downstream documents.
+- Every constraint must be specific: "Only admins can delete" not "handle permissions appropriately".
+- Use the tech stack from \`harness/architecture.md\` as context — do not invent or assume technologies.
 
-export const TEST_CASE_PROMPT = (projectName: string) =>
-  `You are generating a single comprehensive test case file for "${projectName}" from one or more attached task files.
+Start now by reading \`harness/prd.md\` and \`harness/architecture.md\`, then present the module list.`
 
-**The user has attached one or more task files** (e.g. frontend, backend, and/or integration tasks for the same feature).
-Read ALL attached files before writing anything — the test case must cover every acceptance criterion across all of them.
+export const LLD_PROMPT = (projectName: string) =>
+  `You are generating Low-Level Design (LLD) files for "${projectName}". LLD files are precise implementation contracts — detailed enough that an AI agent can execute the task without asking questions.
 
-> ⚠️ Save the output file to \`harness/test_cases/TC-XXX.md\` ONLY — never inside \`apps/\`, \`src/\`, or any source directory.
+### Step 1 — Read context
+Read \`harness/architecture.md\` for the tech stack and conventions. Then list all available module files in \`harness/modules/\` so the human can pick which module to work on.
+
+Present the list:
+
+---
+**Available modules:**
+
+| # | Module | File |
+|---|--------|------|
+| 1 | user-auth | harness/modules/user-auth.md |
+| 2 | ... | ... |
+
+Which module would you like to generate LLD files for? (Reply with the name or number)
+---
+
+Wait for the human to pick a module before continuing.
+
+### Step 2 — Read the selected module file
+Read \`harness/modules/<selected-module>.md\` in full. Extract:
+- Which layers are needed (db, backend, frontend, dashboard)
+- Whether a dashboard section exists in the module file
+- Any third-party integrations mentioned
+
+### Step 3 — Ask which layers to generate
+Present the layers applicable to this module and ask the human to confirm:
+
+---
+**Layers for <module-name>:**
+
+| # | Layer | File |
+|---|-------|------|
+| 1 | Database | harness/lld/<module>/db.md |
+| 2 | Backend | harness/lld/<module>/backend.md |
+| 3 | Frontend | harness/lld/<module>/frontend.md |
+| 4 | Dashboard | harness/lld/<module>/dashboard.md *(only if module has dashboard)* |
+
+Generate all layers, or specific ones? Reply with numbers or "all".
+---
+
+Wait for the human's selection.
+
+### Step 4 — Ask clarifying questions one by one
+For each selected layer, ask ONE question at a time about anything that cannot be determined from the module file or architecture doc. Focus on:
+- **DB layer** — any soft-delete requirements? audit logging? specific index strategy?
+- **Backend layer** — pagination strategy? rate limiting? caching requirements?
+- **Frontend layer** — any specific component library constraints? loading/skeleton patterns?
+- **Dashboard layer** — which admin roles exist? any bulk actions needed?
+
+Skip questions that are already answered in the module file. If the human says "you decide", make a reasonable choice based on the architecture doc, state it, and move on.
+
+### Step 5 — Confirm before generating
+List what will be created:
+- \`harness/lld/<module>/db.md\`
+- \`harness/lld/<module>/backend.md\`
+- \`harness/lld/<module>/frontend.md\`
+- \`harness/lld/<module>/dashboard.md\` (if applicable)
+
+Ask: "Ready to generate LLD files for <module-name>?"
+
+### Step 6 — Generate and save all selected LLD files
+Only after confirmation, create \`harness/lld/<module-name>/\` and write each selected layer file.
 
 ---
 
-### Step 1 — Read ALL attached task files
-For each attached file, extract:
+#### \`harness/lld/<module>/db.md\`
+\`\`\`markdown
+# LLD — <Module Name>: Database
+
+## Schema
+Exact table definitions. For each table:
+\`\`\`sql
+CREATE TABLE table_name (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  column_name VARCHAR(255) NOT NULL,
+  status      VARCHAR(20)  NOT NULL DEFAULT 'active',
+  user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+\`\`\`
+
+## Migrations
+Ordered list of migration files:
+1. \`YYYYMMDD_create_<table>.sql\` — what it does
+2. \`YYYYMMDD_add_<column>_to_<table>.sql\` — what it does
+
+## Indexes
+| Index Name | Table | Columns | Type | Reason |
+|------------|-------|---------|------|--------|
+| idx_... | table | column | BTREE | why this index is needed |
+
+## Seed Data (if required)
+Any initial rows needed for the app to function.
+\`\`\`
+
+---
+
+#### \`harness/lld/<module>/backend.md\`
+\`\`\`markdown
+# LLD — <Module Name>: Backend
+
+## Endpoints
+For each endpoint:
+
+### METHOD /api/v1/<resource>
+- **Auth:** role required (or public)
+- **Request body:**
+\`\`\`json
+{ "field": "type — constraints" }
+\`\`\`
+- **Response 200/201:**
+\`\`\`json
+{ "id": "uuid", "field": "string" }
+\`\`\`
+
+## Business Logic
+Step-by-step logic for each endpoint — numbered, no vague language:
+1. Validate request body fields (list each field and rule)
+2. Check permission: if user.role !== 'admin' → return 403
+3. Query DB: exact query description
+4. Return response shape
+
+## Error Handling
+| Condition | Status | Response |
+|-----------|--------|----------|
+| Missing required field | 400 | \`{ "error": "field is required" }\` |
+| Unauthorised | 401 | \`{ "error": "invalid token" }\` |
+| Forbidden | 403 | \`{ "error": "insufficient permissions" }\` |
+| Not found | 404 | \`{ "error": "resource not found" }\` |
+
+## Dependencies
+- Other modules this layer calls (with exact endpoint or function)
+- External services used
+\`\`\`
+
+---
+
+#### \`harness/lld/<module>/frontend.md\`
+\`\`\`markdown
+# LLD — <Module Name>: Frontend
+
+## Routes
+| Path | Component | Auth Required |
+|------|-----------|---------------|
+| /path | ComponentName | yes/no |
+
+## Components
+For each component:
+
+### ComponentName
+- **Props:** list each prop with type and whether required
+- **Responsibility:** one sentence
+- **Children:** sub-components it renders
+- **Interactions:** what happens on each user action (click, submit, etc.)
+- **States:** loading / empty / error / success — exact UI for each
+
+## State
+| State Key | Type | Initial Value | Updated When |
+|-----------|------|---------------|--------------|
+| items | Item[] | [] | on fetch success |
+| isLoading | boolean | false | on API call start/end |
+
+## API Integration
+| Action | Endpoint | Trigger | On Success | On Error |
+|--------|----------|---------|------------|----------|
+| Fetch list | GET /api/v1/... | component mount | populate state | show error toast |
+| Submit form | POST /api/v1/... | form submit | navigate to /... | show inline error |
+\`\`\`
+
+---
+
+#### \`harness/lld/<module>/dashboard.md\` (if required)
+\`\`\`markdown
+# LLD — <Module Name>: Dashboard
+
+## Views
+For each admin view:
+
+### <View Name> (\`/admin/path\`)
+- **Purpose:** one sentence
+- **Data shown:** list columns/fields displayed
+- **Actions available:** list buttons and their outcomes
+
+## Permissions
+| Role | Can View | Can Edit | Can Delete |
+|------|----------|----------|------------|
+| admin | yes | yes | yes |
+| manager | yes | yes | no |
+
+## Components
+Same structure as frontend components — props, responsibility, states.
+\`\`\`
+
+---
+
+### Rules
+- LLD files are the direct input to task generation — every field, endpoint, and logic step must be explicit. No placeholders, no "handle as needed".
+- Use exact types, column names, and route paths from \`harness/architecture.md\` and the module file.
+- If the module file says "TBD" on something, ask the human before writing the LLD — do not invent it.
+- Vague LLD = vague tasks = bad code. Every section must be complete.
+
+Start now by reading \`harness/architecture.md\` and listing the available modules in \`harness/modules/\`.`
+
+export const TEST_CASE_PROMPT = (projectName: string) =>
+  `You are generating a test case file for "${projectName}" from one or more task files.
+
+> ⚠️ Save the output to \`harness/test_cases/TC-XXX.md\` ONLY — never inside \`apps/\`, \`src/\`, or any source directory.
+
+---
+
+### Step 1 — Read all input files
+Read every attached task file in full. For each, extract:
 - Task ID and title (from the \`# TASK-XXX:\` heading)
+- Task type (db / backend / frontend / dashboard / fe-unit-test / be-unit-test / e2e-test / ui-polish)
 - Description and scope
 - Every acceptance criterion
 - Technical notes (API endpoints, field names, response shapes, roles, constraints)
 - Sprint number
 
-Combine all extracted information into a unified picture of the feature before writing the test case.
-Common patterns when multiple tasks are attached:
-- **Frontend task** → UI screens, user interactions, validation, navigation flows
-- **Backend task** → API endpoints, request/response shapes, error codes, business logic
-- **Integration task** → end-to-end data flow, auth tokens, FE ↔ BE wiring
+Then read \`harness/modules/<module>.md\` (derive the module name from the task files) to get the full acceptance criteria list. Cross-check: every criterion in the module file must be covered by at least one test step.
 
-The \`Linked Task\` field in the Meta table should list ALL attached task IDs (comma-separated).
+**What to extract per task type:**
+- **frontend / ui-polish** → UI screens, user interactions, component states, validation flows, responsive behaviour
+- **backend** → API endpoints, request/response shapes, error codes, business logic rules
+- **fe-unit-test** → components/hooks under test, props, interactions, edge cases
+- **be-unit-test** → services/controllers under test, error paths, mock boundaries
+- **e2e-test** → full user journeys, auth flows, FE ↔ BE data flow end-to-end
+- **dashboard** → admin views, permission rules, bulk actions
+
+The \`Linked Task\` field must list ALL attached task IDs (comma-separated).
+The \`Type\` field must reflect the test case scope — derive it from the linked task types:
+- Only frontend/ui tasks attached → \`ui\`
+- Only backend/unit tasks attached → \`unit\`
+- Mix of frontend + backend, or e2e-test task attached → \`e2e\`
 
 ### Step 2 — Determine the TC number
-Run: \`ls harness/test_cases/ | grep "^TC-" | sort | tail -1\`
-Increment by 1 to get the next TC number (e.g. TC-024 if TC-023 exists).
+Run: \`ls harness/test_cases/ 2>/dev/null | grep "^TC-" | sort | tail -1\`
+Increment by 1 for the next number (e.g. TC-024 if TC-023 exists). If folder is empty or missing, start at TC-001.
 
 ### Step 3 — Generate and save \`harness/test_cases/TC-XXX.md\`
 
 Use this exact structure:
 
 \`\`\`markdown
-# TC-XXX: <App/Module · Feature Area>
+# TC-XXX: <Module · Feature Area>
 
 ## Meta
 | Field | Value |
 |-------|-------|
 | **Status** | 📋 To Do |
-| **Type** | e2e |
+| **Type** | e2e / unit / ui (derived from linked tasks) |
 | **Priority** | P1 |
 | **Assignee** | — |
-| **Linked Task** | TASK-XXX, TASK-YYY, TASK-ZZZ (list all attached task IDs) |
+| **Linked Task** | TASK-XXX, TASK-YYY (all attached task IDs) |
+| **Module Ref** | harness/modules/<module>.md |
 | **Linked Bug** | — |
 | **Sprint** | Sprint N |
 | **Created** | YYYY-MM-DD |
@@ -221,36 +475,36 @@ Use this exact structure:
 ---
 
 ## Description
-<2–3 sentences: what this test verifies, which user role, and why it matters.
-Base this entirely on the task's Description and Acceptance Criteria.>
+2–3 sentences: what this test verifies, which user role is involved, and why it matters.
+Base this entirely on the tasks' descriptions and the module's acceptance criteria.
 
 ---
 
 ## Preconditions
-- <Service/app is running and accessible>
-- <Auth state required (logged in as role X, or unauthenticated)>
+- <App/service is running and accessible>
+- <Auth state required — logged in as role X, or unauthenticated>
 - <Required env vars / credentials set>
-- <Any seed data or prior state needed>
+- <Seed data or prior state needed>
 
 ---
 
 ## Test Steps
 | Step | Action | Expected |
 |:----:|--------|----------|
-| 1 | <Exact action — route to navigate to, button to click, field to fill, API to call> | <Exact expected outcome — status code, UI element, text, redirect> |
+| 1 | <Exact action — route to navigate to, button to click, field to fill, API to call> | <Exact outcome — status code, UI element, text, redirect> |
 | 2 | ... | ... |
 
-<Cover EVERY acceptance criterion from the task.
-  — Happy path first
-  — Then validation/error cases
-  — Then edge cases
-  — For API tests: include exact request body, expected status code, and response fields
-  — For UI tests: include exact route, visible element text, and interaction>
+Cover EVERY acceptance criterion from the module file and the attached tasks:
+- Happy path first
+- Then validation/error cases
+- Then edge cases
+- For API tests: exact request body, expected status code, response fields
+- For UI tests: exact route, visible element text, interaction
 
 ---
 
 ## Expected Result
-<One paragraph — what a fully passing run looks like end-to-end.>
+One paragraph — what a fully passing run looks like end-to-end.
 
 ---
 
@@ -261,8 +515,8 @@ Base this entirely on the task's Description and Acceptance Criteria.>
 
 ## Test Data
 \`\`\`
-<Any test credentials, phone numbers, IDs, payloads, or constants a tester needs.
-  Pull exact values from the task's Technical Notes and test data sections.>
+Any test credentials, IDs, payloads, or constants the tester needs.
+Pull exact values from Technical Notes in the task files.
 \`\`\`
 
 ---
@@ -278,178 +532,197 @@ Base this entirely on the task's Description and Acceptance Criteria.>
 ## Notes
 - <Known manual-only steps (real SMS, hardware, third-party console)>
 - <Relevant API doc links or Swagger paths>
-- <Any role or permission constraints>
+- <Role or permission constraints>
 \`\`\`
 
 ---
 
 ### Rules
-- Every acceptance criterion → at least one test step.
+- Every acceptance criterion in the module file → at least one test step. No criterion may be skipped.
 - Steps must be specific enough for Playwright to automate: exact routes, button labels, field names, API endpoints, status codes.
 - Do NOT add a "Test Run History" section — it is auto-generated by Loom.
-- After saving, confirm the file path and list how many steps were generated.`
+- After saving, confirm the file path, the TC number, and how many test steps were generated.`
 
 export const TASK_PROMPT = (projectName: string) =>
-  `You are helping generate structured task files for a feature in "${projectName}".
+  `You are generating task files for "${projectName}" from LLD documents. Tasks are the direct input to the Go execution engine — every sub-task and acceptance criterion must be specific enough for an AI agent to implement without asking questions.
 
-**Input:** The user has attached a feature brief file (e.g. \`harness/features/authentication.md\`). Use that file as your primary context. Also read \`harness/architecture.md\` for technical constraints and stack details.
+### Step 1 — Read context
+Read \`harness/architecture.md\` for tech stack and conventions. Then list all available modules in \`harness/lld/\` so the human can pick which module to work on.
 
----
-
-### Step 1: Identify the feature
-Read the attached feature file and determine the feature name.
-
-### Step 2: Ask which tasks to generate
-Present the following task menu and ask the user to pick the ones they need. Different team members will pick different tasks based on their role.
-
-Reply with EXACTLY this format — do not generate any files yet:
+Present the list:
 
 ---
-**Feature detected:** \`<feature-name>\`
+**Available modules with LLD files:**
 
-**Which tasks would you like me to generate?** Reply with the numbers (e.g. \`1, 4, 7\` or \`all\`):
+| # | Module | Layers available |
+|---|--------|-----------------|
+| 1 | user-auth | db, backend, frontend |
+| 2 | ... | ... |
 
-| # | Task | Role |
-|---|------|------|
-| 1 | **Frontend** — UI/UX, components, screens, mock data, architecture reference | Frontend dev |
-| 2 | **Backend** — APIs, DB schema, services, auth, validation | Backend dev |
-| 3 | **Integration** — Wire FE to real BE, replace mocks, end-to-end flows | Full-stack / lead |
-| 4 | **Frontend Unit Tests** — Component, hook, and utility tests | Frontend dev |
-| 5 | **Backend Unit Tests** — Service, controller, model tests | Backend dev |
-| 6 | **Performance** — Load testing, Lighthouse, DB query optimisation | DevOps / any |
-| 7 | **QA** — All test types: smoke, functional, regression, UI, security, e2e | QA engineer |
-
-> Tip: A frontend dev typically needs tasks **1, 4**. A backend dev needs **2, 5**. A full-stack lead needs **1, 2, 3**. QA needs **7**.
+Which module would you like to generate tasks for? (Reply with the name or number)
 ---
 
-### Step 3: Wait for the user's selection, then generate ONLY the selected tasks
+Wait for the human to pick a module before continuing.
 
-Once the user replies with their selection, create \`harness/tasks/<feature-name>/\` and generate ONLY the chosen task files using the structure below.
+### Step 2 — Read the LLD files for the selected module
+Read all available layer files in \`harness/lld/<module>/\`:
+- \`db.md\` — if it exists
+- \`backend.md\` — if it exists
+- \`frontend.md\` — if it exists
+- \`dashboard.md\` — if it exists
 
----
+Also read \`harness/modules/<module>.md\` to get the acceptance criteria.
 
-### Task file template (use for ALL selected files):
-Create each file below inside that folder. Use the exact naming convention and follow the template precisely.
-
----
-
-**TASK-001-<feature>-frontend.md**
-- Full UI/UX breakdown: every screen, component, and state
-- Include mock data structures for development (so FE can work without BE)
-- List all props, API contracts the FE will consume
-- Reference \`harness/architecture.md\` for frontend tech stack and conventions
-- Sub-tasks: design system components, routing, forms, error states, loading states, responsive layout
-- Acceptance criteria: pixel-level UI matches design, all user interactions work, mock data renders correctly
-
-**TASK-002-<feature>-backend.md**
-- All API endpoints (method, path, request/response schema)
-- Database models/schema changes
-- Business logic, validation rules, error codes
-- Auth/middleware requirements
-- Reference \`harness/architecture.md\` for backend tech stack, DB, and patterns
-- Sub-tasks: models, controllers/routes, services, middleware, error handling
-- Acceptance criteria: all endpoints return correct status codes and payloads
-
-**TASK-003-<feature>-integration.md**
-- Wire FE to real BE (replace mock data)
-- API integration tests (happy path + error paths)
-- Auth token handling end-to-end
-- Sub-tasks: replace mocks with real calls, handle loading/error states, test each flow end-to-end
-- Acceptance criteria: full user journey works with real data, no mocks remain in production code
-
-**TASK-004-<feature>-fe-unit-tests.md**
-- Unit tests for every component, hook, and utility
-- Test rendering, props, interactions, edge cases
-- Mock external dependencies (API calls, context)
-- Sub-tasks: component tests, hook tests, utility/helper tests, snapshot tests
-- Acceptance criteria: ≥80% coverage, all edge cases covered, tests run in CI
-
-**TASK-005-<feature>-be-unit-tests.md**
-- Unit tests for services, controllers, validators, models
-- Mock DB and external services
-- Test business logic, validation, error handling
-- Sub-tasks: service tests, controller tests, validator tests, model tests
-- Acceptance criteria: ≥80% coverage, all error paths tested, tests run in CI
-
-**TASK-006-<feature>-performance.md**
-- Load testing (expected concurrent users, response time SLAs)
-- FE performance: bundle size, LCP, FID, CLS targets
-- BE performance: p95 latency, throughput, DB query optimisation
-- Sub-tasks: load test scripts, FE lighthouse audit, BE profiling, DB query analysis
-- Acceptance criteria: all SLAs met under expected load
-
-**TASK-007-<feature>-qa.md** ← CRITICAL — testers will use this to generate test cases
-- Description must include: what to test, testing strategy, environments needed, test data setup
-- Sub-tasks must cover ALL of the following test types:
-  - [ ] **Smoke tests** — verify feature is reachable and basic flow works
-  - [ ] **Functional tests** — verify every acceptance criterion from TASK-001 and TASK-002
-  - [ ] **Regression tests** — verify this feature did not break existing features (list which areas to check)
-  - [ ] **Integration tests** — verify FE ↔ BE data flow end-to-end
-  - [ ] **UI layer tests** — visual correctness, responsive on mobile/tablet/desktop, accessibility (a11y), keyboard navigation
-  - [ ] **Edge case tests** — empty states, max input lengths, special characters, concurrent users
-  - [ ] **Error handling tests** — network failure, 4xx/5xx responses, invalid data
-  - [ ] **Security tests** — auth bypass attempts, SQL injection, XSS, CSRF
-  - [ ] **Performance tests** — page load under slow network, large dataset rendering
-  - [ ] **End-to-end tests** — full user journey from login to task completion
-- Acceptance criteria: all test types pass, zero P0/P1 bugs, QA sign-off received
+### Step 3 — Ask which task types to generate
+Present the applicable task types based on which LLD layers exist and ask the human to select:
 
 ---
+**Module:** \`<module-name>\`
 
-### Task file template (use for ALL 7 files):
+**Which tasks would you like me to generate?** Reply with numbers or "all":
+
+| # | Type | Source LLD | Pipeline order |
+|---|------|-----------|----------------|
+| 1 | **db** — schema, migrations, indexes, seed data | lld/db.md | 1st |
+| 2 | **backend** — endpoints, business logic, error handling | lld/backend.md | 2nd |
+| 3 | **frontend** — pages, components, state, API integration | lld/frontend.md | 3rd (parallel) |
+| 4 | **dashboard** — admin views, permissions *(if lld/dashboard.md exists)* | lld/dashboard.md | 3rd (parallel) |
+| 5 | **fe-unit-test** — component, hook, and utility tests | lld/frontend.md | 4th |
+| 6 | **be-unit-test** — service, controller, and model tests | lld/backend.md | 4th |
+| 7 | **e2e-test** — end-to-end flows covering all acceptance criteria | module file | 5th |
+| 8 | **ui-polish** — responsive layout, accessibility, visual correctness | lld/frontend.md | 6th |
+
+> Pipeline order: db → backend → frontend/dashboard (parallel) → fe-unit-test/be-unit-test (parallel) → e2e-test → ui-polish → qa
+---
+
+Wait for the human's selection.
+
+### Step 4 — Determine task numbering
+Run: \`ls harness/tasks/<module>/ 2>/dev/null | grep "^TASK-" | sort | tail -1\`
+Start from the next available number (e.g. TASK-004 if TASK-003 is the last). If the folder is empty or doesn't exist, start from TASK-001.
+
+### Step 5 — Confirm before generating
+List exactly what will be created:
+- \`harness/tasks/<module>/TASK-XXX.md\` — type: db
+- \`harness/tasks/<module>/TASK-XXX.md\` — type: backend
+- ...
+
+Ask: "Ready to generate these tasks for <module-name>?"
+
+### Step 6 — Generate and save all selected task files
+Only after confirmation, create \`harness/tasks/<module>/\` and write each task file.
+
+Each file must follow this exact structure:
 
 \`\`\`markdown
-# TASK-00X-<feature>-<type>: <Full Title>
+# TASK-XXX: <Module> — <Type> (<short title>)
 
 ## Meta
 | Field | Value |
 |-------|-------|
 | **Status** | 📋 To Do |
+| **Type** | db / backend / frontend / dashboard / fe-unit-test / be-unit-test / e2e-test / ui-polish |
 | **Priority** | P1 |
+| **Assignee** | — |
 | **Sprint** | — |
 | **Story Points** | — |
-| **Feature Ref** | harness/features/<feature>.md |
+| **Module Ref** | harness/modules/<module>.md |
+| **LLD Ref** | harness/lld/<module>/<layer>.md |
 | **Architecture Ref** | harness/architecture.md |
 | **Created** | <today's date> |
 
 ---
 
 ## Description
-<2-3 sentences describing what this task covers and why it matters>
+2–3 sentences: what this task implements, which layer it covers, and why it matters.
 
 ---
 
 ## Sub Tasks
+Derived directly from the LLD. Each sub-task must be a single actionable unit:
 - [ ] Sub-task 1
 - [ ] Sub-task 2
-...
 
 ---
 
 ## Acceptance Criteria
+Taken from the module file's Acceptance Criteria — only criteria relevant to this task's layer. Each must be independently testable:
 - [ ] Criterion 1
 - [ ] Criterion 2
-...
 
 ---
 
 ## Technical Notes
-<Key constraints, patterns to follow, gotchas>
+Exact constraints, patterns, and gotchas from the LLD and architecture doc that the implementer must know.
 
 ---
 
 ## Files to Create/Modify
 \`\`\`
-CREATE/MODIFY:
-- path/to/file
+CREATE:
+- exact/path/to/file
+
+MODIFY:
+- exact/path/to/existing/file
 \`\`\`
 
 ---
 
 ## Dependencies
-- **Blocked by:** TASK-00X (if applicable)
-- **Blocks:** TASK-00X (if applicable)
+- **Blocked by:** TASK-XXX (type: db must complete before backend, etc.)
+- **Blocks:** TASK-XXX
 \`\`\`
 
 ---
 
-Generate all selected files now in a single pass. Do not ask for confirmation. Base the content entirely on the attached feature file and architecture.md.`
+### Per-type guidance
+
+**db**
+- Sub-tasks: create each migration file, define each table, add indexes, add seed data if required
+- Technical notes: exact SQL from \`lld/db.md\`
+- Files: migration files, model/entity files
+
+**backend**
+- Sub-tasks: one sub-task per endpoint (route + handler + service + validation)
+- Technical notes: exact request/response shapes and business logic steps from \`lld/backend.md\`
+- Files: route files, service files, middleware
+
+**frontend**
+- Sub-tasks: one sub-task per page/component; include loading, empty, and error states
+- Technical notes: component tree, state shape, and API calls from \`lld/frontend.md\`
+- Files: page files, component files, hook files
+
+**dashboard**
+- Sub-tasks: one sub-task per admin view
+- Technical notes: permissions table and component tree from \`lld/dashboard.md\`
+- Files: admin page files, permission guard files
+
+**fe-unit-test**
+- Sub-tasks: one sub-task per component/hook/utility being tested
+- Technical notes: list exact functions to test, interactions to simulate, mock strategy for API calls and context
+- Acceptance criteria: ≥80% coverage, all edge cases covered, tests run in CI
+- Files: \`*.test.tsx\` / \`*.spec.ts\` files alongside component files
+
+**be-unit-test**
+- Sub-tasks: one sub-task per service/controller/model being tested
+- Technical notes: list exact functions to test, error paths, mock strategy for DB and external services
+- Acceptance criteria: ≥80% coverage, all error paths tested, tests run in CI
+- Files: \`*.test.ts\` / \`*.spec.ts\` files alongside service files
+
+**e2e-test**
+- Sub-tasks: one sub-task per acceptance criterion from the module file
+- Technical notes: exact user flows, test data needed, environments required
+- Files: e2e test spec files
+
+**ui-polish**
+- Sub-tasks: responsive breakpoints, a11y audit, keyboard navigation, visual regression
+- Technical notes: target devices/screen sizes, accessibility standard (WCAG level)
+- Files: CSS/style files, any component updates
+
+### Rules
+- Every sub-task and criterion comes from the LLD — do not invent requirements.
+- The \`Type\` field in Meta must match one of the eight pipeline types exactly — the Go engine uses it for ordering.
+- Task numbering is sequential within the module folder — never reset or reuse numbers.
+- If an LLD section says "TBD", note it in Technical Notes and add a sub-task to resolve it before implementation.
+
+Start now by reading \`harness/architecture.md\` and listing the available modules in \`harness/lld/\`.`

@@ -5,9 +5,9 @@ import { onHarnessLogLine, onHarnessDone, onEngineError, onTemplates } from '@/l
 import { engineCommand } from '@/lib/ipc'
 import { useApp } from '@/context/AppContext'
 import {
-  PRD_PROMPT,
   ARCHITECTURE_PROMPT,
   FEATURE_PROMPT,
+  LLD_PROMPT,
   TASK_PROMPT,
   TEST_CASE_PROMPT,
 } from './prompts'
@@ -534,9 +534,9 @@ function ChatPanel({
   }
 
   const defaultActions = [
-    { id: '_prd', label: '📋 PRD', prompt: PRD_PROMPT(projectName) },
     { id: '_arch', label: '🏗 Architecture', prompt: ARCHITECTURE_PROMPT(projectName) },
-    { id: '_feature', label: '✨ Feature Brief', prompt: FEATURE_PROMPT(projectName) },
+    { id: '_feature', label: '📦 Module Spec', prompt: FEATURE_PROMPT(projectName) },
+    { id: '_lld', label: '🔩 LLD', prompt: LLD_PROMPT(projectName) },
     { id: '_task', label: '➕ New Task', prompt: TASK_PROMPT(projectName) },
     { id: '_test', label: '🧪 Generate Test Case', prompt: TEST_CASE_PROMPT(projectName) },
   ]
